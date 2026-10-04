@@ -138,6 +138,7 @@ Setup and rsyslog configuration: [LIVE_INGEST.md](LIVE_INGEST.md).
 | `POST /api/alerts/{id}/notes` | analyst | `{body}` (≤ 5000 chars) |
 | `POST /api/alerts/{id}/status` | analyst | `{status: open\|investigating\|resolved, disposition?, note?}`. `resolved` requires `disposition` (`true_positive`, `false_positive`, or `benign`); reopening clears it |
 | `GET /api/incidents?status=open,investigating&severity=&limit=` | viewer | Correlated incidents: `title`, `severity`, `status`, `first_seen`, `last_seen`, `entities` (`{src_ip, user, host}` lists), `stages` (ATT&CK tactics in kill-chain order), `alert_count`, `synthetic`. Active first, then severity, then recency |
+| `GET /api/incidents/active` | viewer | The dashboard's Active attack panel: `{active_count, incident}`, `incident` null when none is open. Otherwise the open or investigating incident with the highest severity, then the most stages, then the latest activity: `id`, `title`, `severity`, `status`, `escalated`, `first_seen`, `last_seen`, `alert_count`, `assignee`, `synthetic`, `origins` (`[{ip, city}]`, external source IPs), `sites` (internal sites in the synthetic geo table), `accounts` and `hosts` (worst alert first), `stages` (`[{tactic, first_seen, techniques, alerts}]` in the order first seen), and `actions` (up to 5: `[{technique, technique_name, tactic, action, applies_to}]` from the report playbook, one per technique: the most urgent tactic first (exfiltration and impact, then privileges, persistence, and compromised accounts, then the credential attack, then discovery and reconnaissance), each tactic once before any repeats) |
 | `GET /api/incidents/{id}` | viewer | Adds `alerts` (each with `techniques`), `events` (evidence, each with `alert_ids`), `timeline` (one entry per alert with tactics and technique ids), `techniques`, `techniques_by_tactic`, `escalated`. 404 if missing |
 | `POST /api/incidents/{id}/status` | analyst | `{status: open\|investigating\|resolved, note?}`; audited as `incident_status_changed` |
 | `GET /api/attack/coverage` | viewer | `{tactics, techniques: [{id, name, tactic, rules: [{id, name, enabled}], hits, covered}], summary}` over the built-in ATT&CK subset; `hits` counts alerts from the covering rules |
@@ -208,7 +209,7 @@ Session cookie required (EventSource sends it). One thread per connection; at mo
 
 Clients that cannot hold a stream can poll `GET /api/events?since_id=<last id>` every few seconds, which is what the dashboard does when SSE fails.
 
-The dashboard also reads `GET /api/incidents`, `GET /api/attack/coverage`, and `GET /api/storyline/status` when the server has them (workstreams A and C). A 404 shows a "pending" panel.
+The dashboard also reads `GET /api/incidents`, `GET /api/incidents/active`, `GET /api/attack/coverage`, and `GET /api/storyline/status` when the server has them (workstreams A and C). A 404 shows a "pending" panel.
 
 ## Health and administration
 

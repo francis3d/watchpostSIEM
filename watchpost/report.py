@@ -7,7 +7,7 @@ Both return the same model shape.
 
 import json
 
-from . import __version__, attack, incidents
+from . import __version__, attack, geo, incidents
 from .db import now_iso
 from .pdfwriter import Document
 from .queries import QueryError, get_alert
@@ -205,6 +205,115 @@ def build(conn, incident_id):
     model["actions"] = actions_for([t for items in model["techniques_by_tactic"].values() for t in items])
     model["summary"] = _summary(model)
     return model
+
+
+# --- Active incident brief (dashboard) -------------------------------------------------------
+
+# Whom each technique's first response action is about: the account ("user"), the attacking address ("src_ip"),
+# the host, or the destination outside ("dest_out") or inside ("dest_in") the network. Sub-techniques fall back
+# to their parent.
+_ACTION_SUBJECT = {"T1110": "src_ip", "T1110.001": "src_ip", "T1110.003": "user", "T1110.004": "user",
+                   "T1078": "user", "T1078.003": "user", "T1078.004": "user", "T1595": "src_ip", "T1595.002": "host",
+                   "T1046": "dest_in", "T1190": "host", "T1548": "host", "T1068": "host", "T1136": "user",
+                   "T1098": "user", "T1021": "host", "T1530": "user", "T1567": "dest_out", "T1048": "dest_out",
+                   "T1041": "host", "T1133": "src_ip"}
+BRIEF_ACTIONS = 5
+# Response order by tactic: stop data loss first, then remove the attacker's footholds (privileges, persistence, the
+# compromised account), then block the credential attack, then the hygiene items (discovery, reconnaissance).
+RESPONSE_URGENCY = ("Exfiltration", "Impact", "Collection", "Command and Control", "Lateral Movement",
+                    "Privilege Escalation", "Persistence", "Initial Access", "Credential Access", "Defense Evasion",
+                    "Execution", "Discovery", "Resource Development", "Reconnaissance")
+
+
+def active_brief(conn):
+    """The dashboard's "active attack" panel: the most severe open incident stage by stage, and what to do now.
+
+    The incident is the open or investigating one with the highest severity, then the most kill-chain stages, then
+    the latest activity. Stages are listed in the order the attack reached them. Accounts and hosts are ordered by
+    the worst alert they appear in. Response actions come from the same per-technique table as the reports, most
+    urgent tactic first (RESPONSE_URGENCY) and one per tactic before any tactic gets a second, each naming the
+    accounts, addresses, or hosts it applies to. Returns {"active_count", "incident"}; incident is None when nothing
+    is open.
+    """
+    rows = conn.execute("SELECT id, severity, stages, last_seen FROM incidents"
+                        " WHERE status IN ('open', 'investigating')").fetchall()
+    if not rows:
+        return {"active_count": 0, "incident": None}
+    best = max(rows, key=lambda r: (SEVERITY_ORDER.get(r["severity"], 0), len(_json(r["stages"], [])),
+                                    r["last_seen"] or ""))
+    inc = incidents.get_incident(conn, best["id"])
+
+    stages = []
+    for tactic in inc["stages"]:
+        members = [t for t in inc["timeline"] if tactic in t["tactics"]]
+        stages.append({"tactic": tactic, "first_seen": min((t["ts"] for t in members), default=None),
+                       "techniques": [{"id": t["id"], "name": t.get("name") or ""}
+                                      for t in inc["techniques"] if t["tactic"] == tactic],
+                       "alerts": [{"id": t["alert_id"], "title": t["title"], "severity": t["severity"],
+                                   "status": t["status"]} for t in members]})
+    stages.sort(key=lambda st: (st["first_seen"] or "", attack.tactic_rank(st["tactic"])))
+
+    entities = inc["entities"]
+    # Rank accounts and hosts by the worst alert whose evidence names them, then by how often they appear.
+    alert_rank = {a["id"]: SEVERITY_ORDER.get(a["severity"], 0) for a in inc["alerts"]}
+    weight = {}
+    for e in inc["events"]:
+        worst = max((alert_rank.get(i, 0) for i in e["alert_ids"]), default=0)
+        for key in ("user", "host"):
+            if e.get(key):
+                w = weight.setdefault((key, e[key]), [0, 0])
+                w[0], w[1] = max(w[0], worst), w[1] + 1
+    by_weight = lambda key, names: sorted(names, key=lambda n: [-x for x in weight.get((key, n), [0, 0])] + [n])
+    ips = entities.get("src_ip") or []
+    origins = [{"ip": ip, "city": (geo.locate(ip) or {}).get("city")} for ip in ips if not geo.is_internal(ip)]
+    sites = sorted({geo.locate(ip)["city"] for ip in ips if geo.is_internal(ip) and geo.locate(ip)})
+
+    # Entities seen in each technique's evidence, so an action can say whom it applies to.
+    seen = {}
+    for t in inc["techniques"]:
+        alert_ids = set(t["alert_ids"])
+        found = {"user": [], "src_ip": [], "host": [], "dest_out": [], "dest_in": []}
+        for e in inc["events"]:
+            if not alert_ids & set(e["alert_ids"]):
+                continue
+            values = {"user": e.get("user"), "host": e.get("host"),
+                      "src_ip": e.get("src_ip") if e.get("src_ip") and not geo.is_internal(e["src_ip"]) else None,
+                      "dest_out": e.get("dest_ip") if e.get("dest_ip") and not geo.is_internal(e["dest_ip"]) else None,
+                      "dest_in": e.get("dest_ip") if e.get("dest_ip") and geo.is_internal(e["dest_ip"]) else None}
+            for key, value in values.items():
+                if value and value not in found[key]:
+                    found[key].append(value)
+        seen[t["id"]] = found
+    urgency = lambda tactic: RESPONSE_URGENCY.index(tactic) if tactic in RESPONSE_URGENCY else len(RESPONSE_URGENCY)
+    candidates, done = [], set()
+    for t in sorted(inc["techniques"], key=lambda t: (urgency(t["tactic"]), t["id"])):
+        for text in ACTIONS.get(t["id"]) or ACTIONS.get(t["id"].split(".")[0]) or []:
+            if text in done:
+                continue
+            done.add(text)
+            kind = _ACTION_SUBJECT.get(t["id"]) or _ACTION_SUBJECT.get(t["id"].split(".")[0], "src_ip")
+            found = seen.get(t["id"], {})
+            applies = found.get(kind) or found.get("src_ip") or found.get("user") or []
+            candidates.append({"technique": t["id"], "technique_name": t.get("name") or "", "tactic": t["tactic"],
+                               "action": text, "applies_to": applies[:3]})
+            break  # one action per technique keeps the list short and varied
+    # The most urgent action of every tactic first, then the remaining ones, each group in urgency order.
+    firsts, tactics_seen = [], set()
+    for c in candidates:
+        if c["tactic"] not in tactics_seen:
+            tactics_seen.add(c["tactic"])
+            firsts.append(c)
+    actions = firsts + [c for c in candidates if c not in firsts]
+    if not actions:
+        actions = [{"technique": None, "technique_name": "", "tactic": None, "action": text, "applies_to": []}
+                   for text in FALLBACK_ACTIONS]
+
+    return {"active_count": len(rows), "incident": {
+        **{k: inc[k] for k in ("id", "title", "severity", "status", "escalated", "first_seen", "last_seen",
+                               "alert_count", "assignee")},
+        "synthetic": bool(inc["synthetic"]), "origins": origins, "sites": sites,
+        "accounts": by_weight("user", entities.get("user") or []), "hosts": by_weight("host", entities.get("host") or []),
+        "stages": stages, "actions": actions[:BRIEF_ACTIONS]}}
 
 
 # --- Renderers -----------------------------------------------------------------------------

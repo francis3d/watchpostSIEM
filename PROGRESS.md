@@ -338,3 +338,44 @@ and 390 px wide with no page errors.
 **Decision for the owner.** Attacker locations stayed abroad, entering at the map edge. If you would rather show some
 attackers inside the Dominican Republic (for example a compromised local ISP), map one documentation range to a
 Dominican town in `watchpost/geo.py`; it will then appear at its position on the map instead of at the edge.
+
+## Active attack panel replaces the live event stream (2026-10-04, branch `claude/ecstatic-tesla-2w9ccj`)
+
+The owner's direction: the product is not a SIEM, so the dashboard's raw "Live event stream" had to go in favour of
+more relevant information. Of the options proposed (active attack, response steps, per-site status, accounts and
+hosts at risk, executive KPIs, attack origins, threat bulletins), the recommended pair was built: the active attack
+plus what to do about it.
+
+**Shipped**
+- `GET /api/incidents/active` (`report.active_brief`): the open or investigating incident with the highest
+  severity, then the most stages, then the latest activity. Returns its origins (external IPs with their synthetic
+  city), the targeted sites, accounts and hosts ranked by the worst alert they appear in, the kill-chain stages in
+  the order first seen (each with its techniques and alerts), and up to five response steps from the report's
+  per-technique playbook, most urgent tactic first (`RESPONSE_URGENCY`: data loss, then footholds, then the credential
+  attack, then hygiene) and each tactic once before any repeats, one per technique, each with `applies_to` (the account,
+  attacking address, host, or outbound destination the step is about). `{active_count: 0, incident: null}` when
+  nothing is open. Viewer-readable like every other GET.
+- Dashboard: the right-hand panel is now **Active attack**: header (severity, status, escalation, origin → site with
+  distance, accounts, hosts, time span), **Kill chain** (one row per stage with its worst alert not already shown,
+  else its techniques), **Respond now** (four steps with their targets and technique), and links to the other
+  active incidents and the full PDF. It reloads with the incident list (SSE `incident` and `alert` frames), shows
+  "All clear" when nothing is open, and flashes on new critical or high alerts. Events still pulse on the map.
+  Phone width: the panel grows to its content.
+- Storyline fix: the exfiltration `fw_allow` records said `10.0.0.10 -> 198.51.100.140` in the message but kept the
+  default `dest_ip` 10.0.0.10. They now carry the real destination, so the exfiltration step names 198.51.100.140.
+  Correlation links on source IP, account, and host only, so incidents are unchanged.
+- Fixed while building it: the panel's container first used the class `active`, which the side navigation already
+  uses for the current page, and turned the Dashboard nav button into a column. Renamed to `aa-body`.
+- Tests: `ActiveBriefTests` (empty and all-resolved cases; a full storyline replay checks the chosen incident, stage
+  order, origin, site, account ranking, and the actions' order, uniqueness, playbook source, and targets). The smoke
+  check's dashboard step reads the endpoint. Docs: README, `docs/API.md`, `docs/UI_TOUR.md`, `DEMO_SCRIPT.md`,
+  `LINKEDIN.md`; every screenshot regenerated.
+
+**Verification.** `./run_tests.sh`: 203 tests OK, SMOKE OK (19 steps). Checked in Chromium at 1280×800 and 390 px with
+no page errors; all four steps fit the desktop panel.
+
+**Open for the owner**
+- What the product is, if not a SIEM. The name, README intro, and the Events and Ingest pages still describe a SIEM.
+- Response steps are read-only. Marking one done (with who and when) would need a small table and an analyst route.
+- The demo data attacks only Santo Domingo HQ. A per-site view (Santiago, Punta Cana) needs scenarios spread across
+  the three sites.

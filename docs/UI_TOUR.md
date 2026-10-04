@@ -45,8 +45,15 @@ alerts, open incidents, stored events, the five health checks, and the **Storyli
 and progress (`foothold 54%`). The attack map is focused on the **Dominican Republic**: the demo company's sites
 are Santo Domingo (HQ), Santiago, and Punta Cana. Every attacker location is abroad, so each one enters at the edge
 of the map along its true bearing from HQ, labeled with its city and distance, and a dashed arc runs to HQ. The
-**SYNTHETIC GEO** chip says the positions are invented. The live event stream arrives over Server-Sent Events (`LIVE · SSE`)
-and highlights alerts inline, and its panel border flashes red when a critical alert lands.
+**SYNTHETIC GEO** chip says the positions are invented. Updates arrive over Server-Sent Events (`LIVE · SSE`).
+
+The **Active attack** panel on the right replaces a raw log stream with conclusions. It follows the most severe open
+incident: where the attack comes from (`203.0.113.80`, Ironvale, 9,362 km) and which site it targets (Santo Domingo
+HQ), the accounts and hosts involved (worst first), and how long it has run. **Kill chain** lists each stage in the
+order the attack reached it, with its worst alert. **Respond now** gives the four most urgent response steps (stop the
+data loss first, then the attacker's footholds), each naming the address, account, or host it applies to; the full
+list is in the incident report. Stages and steps are added while the attack unfolds, and the panel border flashes
+when a critical or high alert lands.
 
 ## 3. Dashboard: ATT&CK coverage, incident board, health
 

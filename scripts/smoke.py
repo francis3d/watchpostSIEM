@@ -259,9 +259,13 @@ def main():
         check(h["status"] == "ok", f"health after flow: {[(c['name'], c['status'], c['message']) for c in h['checks']]}")
         check(any(c["name"] == "syslog" and c["status"] == "ok" for c in h["checks"]), "syslog health missing")
 
-        step("SOC dashboard: aggregates, synthetic geo, and the live SSE stream")
+        step("SOC dashboard: aggregates, active attack, synthetic geo, and the live SSE stream")
         status, dash = analyst.call("GET", "/api/dashboard")
         check(status == 200 and dash["attackers"] and dash["alert_timeline"]["bins"], f"dashboard: {status}")
+        status, active = analyst.call("GET", "/api/incidents/active")
+        inc = active.get("incident") or {}
+        check(status == 200 and inc.get("stages") and inc.get("actions"), f"active attack: {status} {active}")
+        print(f"      active attack: incident #{inc['id']}, {len(inc['stages'])} stages, {len(inc['actions'])} response steps")
         status, located = analyst.call("GET", "/api/geo?ips=203.0.113.45,8.8.8.8")
         check(located["ips"]["203.0.113.45"]["synthetic"] and located["ips"]["8.8.8.8"] is None, f"geo: {located}")
         cookie = "; ".join(f"{c.name}={c.value}" for h in analyst.opener.handlers

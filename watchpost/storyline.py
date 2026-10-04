@@ -126,7 +126,7 @@ def _exfiltration(rng):
                 bytes=50_000_000 + rng.randint(0, 1_000_000))
            for i in range(40)]
     out += [_rec(100 + i * 4, "exfiltration", "fw_allow", None, "10.0.0.10", host="fw01",
-                 message=f"[SYNTHETIC] firewall allow 10.0.0.10 -> {ATTACKER_VPN_IP}:443/tcp", dest_port=443,
+                 message=f"[SYNTHETIC] firewall allow 10.0.0.10 -> {ATTACKER_VPN_IP}:443/tcp", dest_ip=ATTACKER_VPN_IP, dest_port=443,
                  bytes=400_000_000)
             for i in range(4)]
     return out

@@ -24,9 +24,9 @@ chip, the "synthetic geo" label on the map, and the banner on every report).
 
 | # | Time | Shot | On screen | Caption / voice-over (optional) |
 |---|---|---|---|---|
-| 1 | 0:00–0:03 | Dashboard, idle | Dark SOC dashboard: status strip, empty attack map, live stream ticking with baseline noise, clock running | "A SIEM I built from scratch." |
+| 1 | 0:00–0:03 | Dashboard, idle | Dark SOC dashboard: status strip, attack map of the Dominican Republic, Active attack panel reading "All clear", clock running | "A SIEM I built from scratch." |
 | 2 | 0:03–0:05 | Admin view | Cursor clicks **Start storyline** in the *Attack storyline (synthetic)* card | "Synthetic intrusion, streamed live." |
-| 3 | 0:05–0:10 | Dashboard, recon | Storyline tile reads `recon`. On the Dominican Republic map, pulses fire where attacks enter from abroad and streak to HQ in Santo Domingo. Web scan and firewall deny events scroll by in the live stream. First alerts: `web_scanner`, `firewall_port_sweep` | "Recon: web scanning and a port sweep." |
+| 3 | 0:05–0:10 | Dashboard, recon | Storyline tile reads `recon`. On the Dominican Republic map, pulses fire where attacks enter from abroad and streak to HQ in Santo Domingo. The Active attack panel opens the incident: Reconnaissance, then Discovery, with the first response steps. First alerts: `web_scanner`, `firewall_port_sweep` | "Recon: web scanning and a port sweep." |
 | 4 | 0:10–0:14 | Dashboard, credential attack → foothold | `credential_attack`, then `foothold`. Red auth failures flood the stream; password spray and brute force alerts; the Critical counter ticks up | "Password spray, then a VPN foothold." |
 | 5 | 0:14–0:18 | Dashboard, escalation → cloud → exfil | `escalation` → `lateral_cloud` → `exfiltration`. Alerts-over-time bars stack; ATT&CK heat matrix cells light up across tactics | "Root, a new cloud key, data out." |
 | 6 | 0:18–0:23 | Incident board → incident detail | Click the critical incident: kill-chain stages across the top, **escalated: 3+ tactics** pill, techniques grouped by tactic, alert timeline | "Every alert chained into one incident, mapped to MITRE ATT&CK." |
@@ -55,7 +55,7 @@ so the attack has to stand out from noise."*
   login from the same IP. Success after failures is critical."*
 - Escalation, cloud, exfil: *"sudo to root on `web01`, a new admin user, a login to `db01`, a cloud access key created
   by a principal we've never seen, then a burst of data reads."*
-Point at the live stream (color by severity), the alerts-over-time chart, and the ATT&CK heat matrix filling in.
+Point at the Active attack panel adding stages and response steps, the alerts-over-time chart, and the ATT&CK heat matrix filling in.
 
 **0:55–1:25 · The incident.** Click the top card on the **Incident board**.
 *"Watchpost correlates alerts that share an IP, account, or host within a window. This one incident holds the whole

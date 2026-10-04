@@ -1,8 +1,10 @@
 import json
+import os
+import tempfile
 import unittest
 
 from tests.pdfparse import ParsedPDF
-from watchpost import engine, incidents, queries, report, simulate
+from watchpost import engine, incidents, queries, report, simulate, storyline
 from watchpost.db import connect, init_schema
 from watchpost.normalize import parse_payload
 
@@ -199,6 +201,61 @@ class IncidentReportTests(unittest.TestCase):
         rows = report.actions_for([{"id": "T1110.999", "name": "", "tactic": "Credential Access"}])
         self.assertEqual(rows[0]["technique"], "T1110.999")
         self.assertIn(report.ACTIONS["T1110"][0], [r["action"] for r in rows])
+
+
+class ActiveBriefTests(unittest.TestCase):
+    """The dashboard's active-attack panel (GET /api/incidents/active)."""
+
+    def test_nothing_open(self):
+        conn = connect(":memory:")
+        init_schema(conn)
+        self.assertEqual(report.active_brief(conn), {"active_count": 0, "incident": None})
+        demo = demo_conn()
+        for row in demo.execute("SELECT id FROM incidents").fetchall():
+            incidents.update_status(demo, row["id"], "analyst", "resolved")
+        self.assertEqual(report.active_brief(demo), {"active_count": 0, "incident": None})
+
+    def test_storyline_incident_stage_by_stage_with_actions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "brief.db")
+            conn = connect(path)
+            init_schema(conn)
+            engine.seed_rules(conn)
+            conn.close()
+            self.assertIsNone(storyline.run_once_fast(lambda: connect(path), speed=4000)["error"])
+            conn = connect(path)
+            brief = report.active_brief(conn)
+            conn.close()
+        inc = brief["incident"]
+        self.assertGreaterEqual(brief["active_count"], 2)
+        # The most severe incident with the most stages: the storyline's whole kill chain.
+        self.assertEqual(inc["severity"], "critical")
+        tactics = [s["tactic"] for s in inc["stages"]]
+        self.assertEqual(tactics[0], "Reconnaissance")
+        self.assertEqual(tactics[-1], "Exfiltration")
+        self.assertGreaterEqual(len(tactics), 5)
+        times = [s["first_seen"] for s in inc["stages"]]
+        self.assertEqual(times, sorted(times))  # in the order the attack reached them
+        for stage in inc["stages"]:
+            self.assertTrue(stage["alerts"] and stage["first_seen"] and stage["techniques"], stage)
+        self.assertIn({"ip": "203.0.113.80", "city": "Ironvale"}, inc["origins"])
+        self.assertEqual(inc["sites"], ["Santo Domingo HQ"])
+        self.assertEqual(inc["accounts"][0], "dave")  # the compromised account outranks the sprayed ones
+        self.assertEqual(sorted(inc["accounts"]), sorted(set(inc["accounts"])))
+        # Most urgent first (stop the data loss, then the footholds), one tactic each before any repeats, one action
+        # per technique, each naming whom it applies to.
+        actions = inc["actions"]
+        self.assertTrue(0 < len(actions) <= report.BRIEF_ACTIONS)
+        self.assertEqual(actions[0]["tactic"], "Exfiltration")
+        self.assertIn("198.51.100.140", actions[0]["applies_to"])
+        self.assertEqual(len({a["technique"] for a in actions}), len(actions))
+        self.assertEqual(len({a["tactic"] for a in actions}), len(actions))  # five tactics, five distinct steps
+        urgency = [report.RESPONSE_URGENCY.index(a["tactic"]) for a in actions]
+        self.assertEqual(urgency, sorted(urgency))
+        account = next(a for a in actions if a["technique"] == "T1078")
+        self.assertEqual(account["applies_to"][0], "dave")  # the compromised account is named
+        for a in actions:
+            self.assertIn(a["action"], report.ACTIONS.get(a["technique"]) or report.ACTIONS[a["technique"].split(".")[0]])
 
 
 if __name__ == "__main__":

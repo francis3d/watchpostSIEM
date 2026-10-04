@@ -19,7 +19,7 @@ const TACTICS = [
 // The demo company's sites, one address per RFC 1918 range in the synthetic geo table (all in the Dominican Republic).
 const SITE_IPS = ["10.0.0.10", "172.16.0.10", "192.168.0.10"];
 const HQ_DEFAULT = { city: "Santo Domingo HQ", lat: 18.4861, lon: -69.9312, internal: true, synthetic: true };
-const FEED_MAX = 140;
+const ACTIONS_SHOWN = 4;  // response actions that fit the panel; the rest are in the incident report
 
 // ---------- small helpers ----------
 function svgNode(markup) {
@@ -206,7 +206,7 @@ const Live = {
     if (events.some((e) => e.synthetic)) $("#k-synth").hidden = false;
   },
   onAlert(a) {
-    if (Dash.mounted && a.change === "created") Dash.alertRow(a);
+    if (Dash.mounted && a.change === "created" && SEV_RANK[sevOf(a.severity)] >= SEV_RANK.high) Dash.flash();
     this.scheduleRefresh();
   },
   onHealth(h) {
@@ -239,7 +239,7 @@ const Live = {
     const r = await optional("/api/incidents");
     this.incidents = r.state === "ok" ? { state: "ok", list: normIncidents(r.data) } : r;
     this.renderStrip();
-    if (Dash.mounted) Dash.renderBoard();
+    if (Dash.mounted) { Dash.renderBoard(); Dash.loadActive(); }
   },
 
   bumpEpm(count) {
@@ -314,23 +314,19 @@ const Live = {
 // ---------- the dashboard view ----------
 const Dash = {
   mounted: false, data: null, coverage: { state: "loading" }, details: null,
-  queue: [], feedCount: 0, paused: false, live: new Map(), mapSize: null, timers: {}, observer: null,
+  queue: [], live: new Map(), mapSize: null, timers: {}, observer: null, active: { state: "loading" },
 
   mount() {
     this.unmount();
     this.mounted = true;
     this.mapSize = null;
-    this.feedCount = 0;
-    const pause = el("button", { class: "mini ghost", id: "feed-pause", onclick: () => this.togglePause() }, "Pause");
     render(el("div", { class: "soc", id: "soc" },
       panel("p-map", "Attack map · Dominican Republic", [chip("SYNTHETIC GEO", "synthetic"), el("span", { class: "muted", id: "map-count" })],
         el("div", { class: "mapwrap", id: "map" }),
         el("div", { class: "map-side", id: "map-side" }),
         el("div", { class: "map-legend" }, ...["critical", "high", "medium", "low"].map((s) => el("span", {}, el("i", { class: `dot sev-${s}` }), s)),
           el("span", {}, el("i", { class: "dot hq" }), "HQ & sites"))),
-      panel("p-feed", "Live event stream", [el("span", { class: "muted", id: "feed-rate" }), pause],
-        el("div", { class: "feed-head" }, el("span", {}, "TIME"), el("span", {}, "SEV"), el("span", {}, "TYPE"), el("span", {}, "SOURCE → TARGET")),
-        el("div", { class: "feed", id: "feed", onmouseenter: () => this.hover(true), onmouseleave: () => this.hover(false) })),
+      panel("p-active", "Active attack", [], el("div", { class: "aa-body", id: "active" })),
       panel("p-timeline", "Alerts over time", [el("span", { class: "muted", id: "tl-bucket" })], el("div", { class: "chartbox", id: "tl-chart" }),
         el("div", { class: "legend" }, ...["critical", "high", "medium", "low"].map((s) => el("span", {}, el("i", { class: `dot sev-${s}` }), s)),
           el("span", {}, el("i", { class: "dot volume" }), "event volume"))),
@@ -340,7 +336,7 @@ const Dash = {
       panel("p-rules", "Top rules", [el("span", { class: "muted" }, "alerts all time")], el("div", { class: "chartbox", id: "rules-chart" })),
       panel("p-health", "Health", [el("a", { href: "#health", class: "muted" }, "details →")], el("div", { id: "health-body" })),
     ));
-    this.timers.drip = setInterval(() => this.drip(), 110);
+    this.timers.pulses = setInterval(() => this.drainPulses(), 110);
     this.timers.details = setInterval(() => this.loadHealthDetails(), 30000);
     const soc = $("#soc");
     if (window.ResizeObserver && soc) {
@@ -368,7 +364,6 @@ const Dash = {
   },
   async update(d) {
     this.data = d;
-    if (!this.feedCount) this.fillFeed(d.recent_events);
     const ips = [...d.attackers.map((a) => a.ip), ...d.recent_events.map((e) => e.src_ip), ...d.recent_events.map((e) => e.dest_ip), ...SITE_IPS].filter(Boolean);
     this.redraw();
     if (await Geo.resolve(ips)) this.renderMarks();
@@ -518,17 +513,11 @@ const Dash = {
     setTimeout(() => nodes.forEach((n) => n.remove()), 1700);
   },
 
-  // --- live feed ---
-  fillFeed(events) {
-    const feed = $("#feed");
-    if (!feed) return;
-    feed.replaceChildren(...events.slice(0, FEED_MAX).map((e) => this.feedRow(e, false)));
-    this.feedCount = events.length || 1;
-  },
+  // --- map pulses for live events (the attack map is the only live per-event view) ---
   enqueue(events) {
-    // Batches arrive newest-first; drip them in oldest-first so the stream reads in order.
+    // Batches arrive newest-first; pulse them oldest-first.
     for (const e of [...events].reverse()) this.queue.push(e);
-    if (this.queue.length > 600) this.queue.splice(0, this.queue.length - 600);
+    if (this.queue.length > 200) this.queue.splice(0, this.queue.length - 200);
     const ips = events.flatMap((e) => [e.src_ip, e.dest_ip]).filter(Boolean);
     for (const e of events) {
       if (!e.src_ip || (SEV_RANK[sevOf(e.severity)] < 2 && e.event_type !== "auth_failure")) continue;
@@ -540,48 +529,95 @@ const Dash = {
     this.scheduleMarks();
   },
   scheduleMarks: debounce(() => Dash.renderMarks(), 800),
-  drip() {
-    const rate = $("#feed-rate");
-    if (rate) rate.textContent = `${fmtN(Live.rollingEpm())}/min${this.queue.length ? ` · ${this.queue.length} queued` : ""}`;
-    if (this.paused || !this.queue.length) return;
-    const feed = $("#feed");
-    if (!feed) return;
+  drainPulses() {
     const take = Math.min(this.queue.length, Math.max(1, Math.ceil(this.queue.length / 10)));
-    for (const e of this.queue.splice(0, take)) {
-      feed.prepend(this.feedRow(e, true));
-      this.pulse(e);
-    }
-    this.feedCount += take;
-    while (feed.childElementCount > FEED_MAX) feed.lastElementChild.remove();
+    for (const e of this.queue.splice(0, take)) this.pulse(e);
   },
-  feedRow(e, fresh) {
-    const s = sevOf(e.severity);
-    const target = e.user || e.host || e.dest_ip || "";
-    return el("div", { class: `fr sev-${s}${fresh ? " new" : ""}`, title: e.message || "" },
-      el("span", { class: "ft" }, clock(e.ts)),
-      sevTag(s),
-      el("span", { class: "fy" }, e.event_type),
-      el("span", { class: "fd" },
-        e.src_ip ? el("code", {}, e.src_ip) : null, target ? el("span", { class: "arrow" }, " → ") : null,
-        target ? el("span", { class: "fu" }, target) : null,
-        e.message ? el("span", { class: "fm" }, ` ${e.message.replace(/^\[SYNTHETIC\]\s*/, "")}`) : null,
-        e.synthetic ? el("span", { class: "syn" }, "SYN") : null));
-  },
-  alertRow(a) {
-    const feed = $("#feed");
-    if (!feed) return;
-    const row = el("a", { class: `fr alert-row sev-${sevOf(a.severity)} new`, href: `#alerts/${a.id}` },
-      el("span", { class: "ft" }, clock(a.last_seen)), sevTag(a.severity), el("span", { class: "fy" }, "▲ ALERT"),
-      el("span", { class: "fd" }, el("b", {}, a.title), el("span", { class: "fm" }, ` ${a.rule_id}`)));
-    feed.prepend(row);
-    const p = $("#p-feed");
+  flash() {
+    const p = $("#p-active");
     if (p) { p.classList.remove("flash"); void p.offsetWidth; p.classList.add("flash"); }
   },
-  hover(on) { this.hovering = on; this.paused = on || this.userPaused; },
-  togglePause() {
-    this.userPaused = !this.userPaused;
-    this.paused = this.userPaused || this.hovering;
-    $("#feed-pause").textContent = this.userPaused ? "Resume" : "Pause";
+
+  // --- active attack: the most severe open incident, stage by stage, and what to do now ---
+  async loadActive() {
+    const r = await optional("/api/incidents/active");
+    if (r.state === "ok" && r.data.incident) await Geo.resolve([...r.data.incident.origins.map((o) => o.ip), SITE_IPS[0]]);
+    this.active = r;
+    this.renderActive();
+  },
+  renderActive() {
+    const box = $("#active"), meta = $("#p-active-meta");
+    if (!box || !meta) return;
+    const r = this.active;
+    if (r.state !== "ok") {
+      meta.replaceChildren(r.state === "loading" ? chip("LOADING", "pendingchip") : chip(r.state === "pending" ? "PENDING" : "ERROR", "pendingchip"));
+      box.replaceChildren(el("p", { class: "empty-note" }, r.state === "loading" ? "Loading…"
+        : r.state === "pending" ? "This view needs GET /api/incidents/active." : r.error));
+      return;
+    }
+    const { incident: inc, active_count: count } = r.data;
+    if (!inc) {
+      meta.replaceChildren(el("span", { class: "muted" }, "no open incidents"));
+      box.replaceChildren(el("div", { class: "aa-clear" }, el("b", {}, "All clear"),
+        el("p", {}, "No incident is open. When alerts correlate into one, its kill chain and the response steps appear here.")));
+      return;
+    }
+    const sev = sevOf(inc.severity);
+    meta.replaceChildren(el("a", { href: `#incidents/${inc.id}`, class: "muted" }, `incident #${inc.id} →`));
+    const stages = inc.stages;
+    const first = stages[0]?.tactic, last = stages[stages.length - 1]?.tactic;
+    const hq = this.hq();
+    const origin = inc.origins[0];
+    const where = origin && Geo.get(origin.ip);
+    const km = where ? `${Math.round(WPMap.distanceKm(hq, where)).toLocaleString("en-US")} km` : null;
+    const secs = Math.max(0, (Date.parse(inc.last_seen) - Date.parse(inc.first_seen)) / 1000);
+    const span = secs < 60 ? `${Math.round(secs)} s` : secs < 3600 ? `${Math.floor(secs / 60)} min ${Math.round(secs % 60)} s` : `${(secs / 3600).toFixed(1)} h`;
+    const more = (list, n) => (list.length > n ? `${list.slice(0, n).join(", ")} +${list.length - n}` : list.join(", ") || "—");
+
+    const head = el("div", { class: `aa-head sev-${sev}` },
+      el("div", { class: "aa-tags" }, sevTag(sev), el("span", { class: `chip st-${inc.status}` }, inc.status.toUpperCase()),
+        inc.escalated ? chip(`ESCALATED · ${stages.length} TACTICS`, "esc") : null, inc.synthetic ? el("span", { class: "syn" }, "SYN") : null),
+      el("a", { class: "aa-title", href: `#incidents/${inc.id}` }, stages.length > 1 ? `${first} → ${last}` : first || inc.title,
+        el("span", { class: "muted" }, ` · ${inc.alert_count} alerts`)),
+      el("div", { class: "aa-route" },
+        origin ? el("span", {}, el("i", { class: `dot sev-${sev}` }), el("code", {}, origin.ip),
+          ` ${origin.city || "unknown"}${km ? ` · ${km}` : ""}${inc.origins.length > 1 ? ` +${inc.origins.length - 1}` : ""}`) : el("span", { class: "muted" }, "internal source"),
+        el("span", { class: "arrow" }, " → "), el("b", {}, inc.sites.join(", ") || hq.city)),
+      el("div", { class: "aa-meta" },
+        el("span", {}, "Accounts ", el("b", {}, more(inc.accounts, 2))), el("span", {}, "Hosts ", el("b", {}, more(inc.hosts, 2))),
+        el("span", { title: `${inc.first_seen} → ${inc.last_seen}` }, `${clock(inc.first_seen)}–${clock(inc.last_seen)} UTC · ${span}`)));
+
+    // Each stage shows its worst alert, preferring one no earlier stage has shown.
+    const shownAlerts = new Set();
+    const chain = el("ol", { class: "aa-chain" }, ...stages.map((st) => {
+      const ranked = [...st.alerts].sort((a, b) => SEV_RANK[sevOf(b.severity)] - SEV_RANK[sevOf(a.severity)]);
+      const fresh = ranked.find((a) => !shownAlerts.has(a.id));
+      const lead = fresh || ranked[0];
+      if (lead) shownAlerts.add(lead.id);
+      // An alert already shown for an earlier stage: name what this stage adds (its techniques) instead.
+      const what = fresh ? fresh.title : st.techniques.length ? st.techniques.map((t) => `${t.name} (${t.id})`).join(", ") : lead ? lead.title : "";
+      return el("li", { class: `sev-${sevOf(ranked[0]?.severity)}` },
+        el("span", { class: "t" }, clock(st.first_seen)), el("i"),
+        el("a", { class: "what", href: lead ? `#alerts/${lead.id}` : `#incidents/${inc.id}`, title: lead ? lead.title : "" },
+          el("b", {}, st.tactic), el("span", {}, what)),
+        el("span", { class: "n", title: `${st.alerts.length} alerts in this stage` }, st.alerts.length > 1 ? `+${st.alerts.length - 1}` : ""));
+    }));
+
+    const shown = inc.actions.slice(0, ACTIONS_SHOWN);
+    const actions = el("ol", { class: "aa-actions" }, ...shown.map((a, i) => el("li", {},
+      el("span", { class: "num" }, String(i + 1)),
+      el("p", {}, a.action, " ", ...a.applies_to.map((v) => el("code", {}, v)),
+        a.technique ? el("span", { class: "tag", title: `${a.technique_name} (${a.tactic})` }, a.technique) : null))));
+
+    box.replaceChildren(head,
+      el("div", { class: "aa-sec" }, el("span", {}, "Kill chain"), el("span", { class: "muted" }, `${stages.length} stages`)),
+      chain,
+      el("div", { class: "aa-sec" }, el("span", {}, "Respond now"), el("span", { class: "muted" }, "most urgent first")),
+      actions,
+      el("div", { class: "aa-foot" },
+        count > 1 ? el("a", { href: "#incidents" }, `${count - 1} more active incident${count > 2 ? "s" : ""} →`) : el("span", {}),
+        el("a", { href: `/api/incidents/${inc.id}/report.pdf`, target: "_blank", rel: "noopener" },
+          inc.actions.length > shown.length ? `All ${inc.actions.length} steps: report (PDF)` : "Report (PDF)")));
   },
 
   // --- charts ---

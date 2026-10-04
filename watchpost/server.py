@@ -306,6 +306,12 @@ def incident_list(req):
     return incidents.list_incidents(req.conn, req.query)
 
 
+@route("GET", "/api/incidents/active")
+def incident_active(req):
+    """The most severe open incident, stage by stage, with prioritized response actions (dashboard panel)."""
+    return report.active_brief(req.conn)
+
+
 @route("GET", r"/api/incidents/(\d+)")
 def incident_detail(req, incident_id):
     return incidents.get_incident(req.conn, int(incident_id))
