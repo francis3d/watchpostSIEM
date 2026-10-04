@@ -32,6 +32,21 @@ function setSvgChildren(group, inner) {
   const wrap = svgNode(`<svg xmlns="http://www.w3.org/2000/svg">${inner}</svg>`);
   group.replaceChildren(...(wrap.childNodes ? [...wrap.childNodes] : []));
 }
+// Size of a map label ({width, top, height} around its baseline), measured on a hidden probe so it follows the CSS
+// font; estimated while the map is not laid out yet.
+function mapLabelBox(svg, text) {
+  let probe = svg.querySelector("text.ml-probe");
+  if (!probe) {
+    probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    probe.setAttribute("class", "ml ml-probe");
+    probe.setAttribute("aria-hidden", "true");
+    svg.append(probe);
+  }
+  probe.textContent = text;
+  let b = null;
+  try { b = probe.getBBox(); } catch { /* not rendered */ }
+  return b && b.width ? { width: b.width, top: b.y, height: b.height } : { width: text.length * 6, top: -9, height: 12 };
+}
 const clock = (ts) => (ts ? String(ts).slice(11, 19) : "--:--:--");
 const shortTime = (ts) => (ts ? String(ts).slice(11, 16) : "");
 function ago(ts) {
@@ -426,17 +441,27 @@ const Dash = {
     }
     const ranked = [...cities.values()].sort((a, b) => SEV_RANK[b.sev] - SEV_RANK[a.sev] || b.events - a.events);
     const esc = WPCharts.esc;
+    // Label the top 7 without overlap: the collision pass flips or steps a crowded label (Northhaven and Ironvale
+    // sit close together) and keeps edge labels inside the map. HQ's ring and label are fixed obstacles.
+    const [hx, hy] = WPMap.project(hq.lon, hq.lat, w, h);
+    const hqBox = mapLabelBox(svg, "HQ");
+    const hqLabel = [hx + 8, hy + 12 + hqBox.top, hx + 8 + hqBox.width, hy + 12 + hqBox.top + hqBox.height];
+    const pts = ranked.map((c, i) => {
+      const [x, y] = WPMap.project(c.lon, c.lat, w, h);
+      return { x, y, r: 2.6 + Math.min(5, Math.log2(1 + c.events) * 0.8), width: i < 7 ? mapLabelBox(svg, c.city).width : 0 };
+    });
+    const slots = WPMap.placeLabels(pts, w, h, { box: hqBox, fixed: [[hx - 9, hy - 9, hx + 9, hy + 9], hqLabel] });
     let arcs = "", marks = "";
     ranked.forEach((c, i) => {
       arcs += `<path class="arc s-${c.sev}" pathLength="100" d="${WPMap.arcPath([c.lon, c.lat], [hq.lon, hq.lat], w, h)}"/>`;
-      const [x, y] = WPMap.project(c.lon, c.lat, w, h);
-      const r = 2.6 + Math.min(5, Math.log2(1 + c.events) * 0.8);
+      const { x, y, r } = pts[i], s = slots[i];
+      const leader = s && s.leader ? `<line class="leader" x1="${s.leader[0].toFixed(1)}" y1="${s.leader[1].toFixed(1)}" ` +
+        `x2="${s.leader[2].toFixed(1)}" y2="${s.leader[3].toFixed(1)}"/>` : "";
       marks += `<g class="mk sev-${c.sev}"><title>${esc(`${c.city} (synthetic geo)\n${c.ips.join(", ")}\n${c.events} events`)}</title>` +
         `<circle class="halo" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r * 2.2).toFixed(1)}"/>` +
-        `<circle class="core" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"/>` +
-        (i < 7 ? `<text class="ml" x="${(x + r + 3).toFixed(1)}" y="${(y + 3).toFixed(1)}">${esc(c.city)}</text>` : "") + `</g>`;
+        `<circle class="core" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"/>` + leader +
+        (s ? `<text class="ml" x="${s.x.toFixed(1)}" y="${s.y.toFixed(1)}" text-anchor="${s.anchor}">${esc(c.city)}</text>` : "") + `</g>`;
     });
-    const [hx, hy] = WPMap.project(hq.lon, hq.lat, w, h);
     marks += `<g class="hq"><title>${esc(`${hq.city} (synthetic geo)`)}</title><circle class="ring" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="9"/>` +
       `<circle class="core" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.6"/><text class="ml" x="${(hx + 8).toFixed(1)}" y="${(hy + 12).toFixed(1)}">HQ</text></g>`;
     setSvgChildren(svg.querySelector("g.arcs"), arcs);

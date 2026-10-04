@@ -263,3 +263,26 @@ validate` passes on Caddy 2.6.2, the Debian 12 version, and `caddy fmt` reports 
   draft in the repo.
 - Rate-limit defaults suit a small public demo. Visitors behind one corporate NAT share a bucket. Raise
   `SIEM_RATE_PER_MIN` if that becomes a problem.
+
+## Attack map label collisions (2026-10-04, branch `claude/peaceful-fermat-e53m2b`)
+
+**Shipped**
+- The attack map's city labels no longer overlap. Northhaven and Ironvale sit about 35 px apart at 1280 px, so
+  Northhaven's label used to land on Ironvale's label and marker. `WPMap.placeLabels` (static/map.js) is a small
+  collision pass: in rank order, each label takes the first slot that stays inside the map and clears every marker
+  core, HQ's ring and label, and every label and leader line already placed. Slots are right of the marker, then left,
+  then one line up or down per step on either side with a short leader line. A label with no free slot is dropped
+  (the marker's tooltip and the side list still name it), never drawn on top of another.
+- `Dash.renderMarks` measures each label on a hidden SVG probe, so the pass follows the CSS font.
+- The same pass keeps edge labels inside the map: Kestrel Bay and Saltmere were clipped at the right edge and now
+  sit left of their markers.
+- The geo table is unchanged (`impossible_geo_login` and its tests depend on it).
+- `docs/screenshots/soc-dashboard.png` recaptured at 1280x800 (2x) mid-storyline.
+
+**Verification.** `./run_tests.sh`: 201 tests OK, then SMOKE OK. New `MapLabelTests` run `placeLabels` under Node
+(skipped if `node` is missing; there is no JS runtime in CI): all six table cities labeled with no overlap at map
+widths from 320 to 1200 px with the smallest and largest marker sizes, and a crowded cluster resolves with leader
+lines. With the collision checks disabled the tests fail. In Chromium at 1280x800, after Admin → Load synthetic demo
+data and a storyline run at 2x, 20 checks of every label's `getBBox()` through the run found no overlap with a label,
+a marker core, or the map edge. The same check passed at 1680, 1000, 820, and 390 px wide, and with eight extra fake
+cities crowded into central Europe. No page errors.

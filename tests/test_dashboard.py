@@ -1,6 +1,8 @@
 import json
 import re
+import shutil
 import socket
+import subprocess
 import time
 import unittest
 from datetime import timedelta
@@ -267,6 +269,72 @@ class DashboardTests(ServerTestCase):
         self.assertEqual(v.get("/api/geo?ips=192.0.2.1")[0], 200)
 
 
+# Runs the map's label collision pass under Node: marks are [lon, lat, core radius, label], HQ is [lon, lat]. Mirrors
+# Dash.renderMarks (labels about 6px per character, HQ's ring and label as fixed boxes) and prints each placement.
+PLACE_LABELS_JS = """
+require(process.argv[1]);
+const a = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const [hx, hy] = WPMap.project(a.hq[0], a.hq[1], a.w, a.h);
+const fixed = [[hx - 9, hy - 9, hx + 9, hy + 9], [hx + 8, hy + 3, hx + 20, hy + 15]];
+const marks = a.marks.map(([lon, lat, r, label]) => {
+  const [x, y] = WPMap.project(lon, lat, a.w, a.h);
+  return { x, y, r, width: label.length * 6 };
+});
+const slots = WPMap.placeLabels(marks, a.w, a.h, { fixed });
+console.log(JSON.stringify({ marks, slots, fixed }));
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "needs Node to run static/map.js")
+class MapLabelTests(unittest.TestCase):
+    """The attack map's labels never overlap each other, a marker, HQ, or the map edge."""
+
+    SIZES = [(320, 124.4), (361, 140.4), (466, 181.2), (629, 244.6), (820.3, 319), (1200, 466.7)]
+    HQ = [geo.locate("10.0.0.10")["lon"], geo.locate("10.0.0.10")["lat"]]
+
+    def place(self, marks, w, h):
+        args = {"marks": marks, "hq": self.HQ, "w": w, "h": h}
+        out = subprocess.run(["node", "-e", PLACE_LABELS_JS, str(STATIC / "map.js")], input=json.dumps(args),
+                             capture_output=True, text=True, timeout=30, check=True)
+        result = json.loads(out.stdout)
+        rects = []
+        for m, s in zip(result["marks"], result["slots"]):
+            if s:
+                x0 = s["x"] if s["anchor"] == "start" else s["x"] - m["width"]
+                rects.append((x0, s["y"] - 9, x0 + m["width"], s["y"] + 3))  # placeLabels' default text box
+        return result, rects
+
+    def assertClear(self, result, rects, w, h):
+        overlap = lambda a, b: a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+        cores = [(m["x"] - m["r"], m["y"] - m["r"], m["x"] + m["r"], m["y"] + m["r"]) for m in result["marks"]]
+        for i, a in enumerate(rects):
+            self.assertTrue(0 <= a[0] and 0 <= a[1] and a[2] <= w and a[3] <= h, f"label {i} leaves the map: {a}")
+            for b in rects[i + 1:] + cores + result["fixed"]:
+                self.assertFalse(overlap(a, b), f"label {a} overlaps {b}")
+
+    def test_geo_table_labels_all_fit_without_overlap(self):
+        cities = [(lon, lat, city) for net, city, lat, lon in geo.TABLE if not geo.is_internal(str(net[0]))]
+        self.assertIn("Northhaven", [c for *_, c in cities])
+        for w, h in self.SIZES:
+            for r in (3.4, 7.6):  # smallest and largest marker cores
+                with self.subTest(size=f"{w}x{h}", r=r):
+                    result, rects = self.place([[lon, lat, r, city] for lon, lat, city in cities], w, h)
+                    self.assertTrue(all(result["slots"]), result["slots"])
+                    self.assertClear(result, rects, w, h)
+
+    def test_crowded_markers_step_out_with_leaders_or_drop(self):
+        marks = [[18 + i * 0.6, 59 - i * 0.4, 5, f"Crowded city {i}"] for i in range(7)]
+        for w, h in self.SIZES:
+            with self.subTest(size=f"{w}x{h}"):
+                result, rects = self.place(marks, w, h)
+                self.assertClear(result, rects, w, h)
+                self.assertTrue(any(s and s["leader"] for s in result["slots"]))
+                for s in result["slots"]:
+                    if s and s["leader"]:  # the leader ends at its label's near edge, on the label's center line
+                        self.assertAlmostEqual(s["leader"][2], s["x"] - (1.5 if s["anchor"] == "start" else -1.5), places=6)
+                        self.assertAlmostEqual(s["leader"][3], s["y"] - 3, places=6)
+
+
 class StaticAssetTests(unittest.TestCase):
     """No JS runtime in CI, so check the browser code's shape and CSP hygiene from Python."""
 
@@ -286,7 +354,7 @@ class StaticAssetTests(unittest.TestCase):
 
     def test_map_exports(self):
         names = self.exported("map.js", "globalThis.WPMap")
-        self.assertLessEqual({"project", "baseMap", "arcPath", "LAND"}, names)
+        self.assertLessEqual({"project", "baseMap", "arcPath", "LAND", "placeLabels"}, names)
 
     def test_index_has_no_inline_code_and_scripts_exist(self):
         html = self.read("index.html")

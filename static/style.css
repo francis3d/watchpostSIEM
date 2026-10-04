@@ -219,6 +219,8 @@ dialog::backdrop { background: rgb(0 0 0 / .6); }
 .worldmap .mk.sev-critical .halo { animation-duration: 1.2s; opacity: .35; }
 .worldmap .mk circle { fill: currentColor; }
 .worldmap .ml { fill: var(--ink-2); font: 9.5px var(--mono); paint-order: stroke; stroke: #060a0f; stroke-width: 3px; }
+.worldmap .ml-probe { visibility: hidden; }
+.worldmap .mk .leader { stroke: var(--ink-2); stroke-width: .9; opacity: .75; }
 .worldmap .hq { color: var(--accent); }
 .worldmap .hq .core { fill: var(--accent); filter: drop-shadow(0 0 4px var(--accent)); }
 .worldmap .hq .ring { fill: none; stroke: var(--accent); stroke-width: 1; transform-box: fill-box; transform-origin: center; animation: radar 2.6s ease-out infinite; }

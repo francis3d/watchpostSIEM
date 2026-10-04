@@ -160,4 +160,55 @@ function arcPath(a, b, w, h) {
   return `M${r2(x1)} ${r2(y1)}Q${r2(cx)} ${r2(cy)} ${r2(x2)} ${r2(y2)}`;
 }
 
-globalThis.WPMap = Object.freeze({ LAND, WATER, project, inside, landDots, baseMap, arcPath });
+// True when the segment [ax, ay, bx, by] passes through the box [x0, y0, x1, y1] (slab clipping).
+function segmentHitsBox([ax, ay, bx, by], [x0, y0, x1, y1]) {
+  let lo = 0, hi = 1;
+  for (const [p, d, min, max] of [[ax, bx - ax, x0, x1], [ay, by - ay, y0, y1]]) {
+    if (d === 0) { if (p < min || p > max) return false; continue; }
+    const t1 = (min - p) / d, t2 = (max - p) / d;
+    lo = Math.max(lo, Math.min(t1, t2)); hi = Math.min(hi, Math.max(t1, t2));
+    if (lo > hi) return false;
+  }
+  return true;
+}
+
+// Collision pass for marker labels. `marks` are {x, y, r, width}, most important first: marker center, core radius
+// and label text width (0: no label, but the core still blocks). `box` is the text's extent around its baseline.
+// Each label takes the first slot that stays inside the w x h map and clears every marker core, every `fixed` box
+// ([x0, y0, x1, y1]) and every label and leader line placed before it: right of its marker, then left, then one line
+// further up or down per step on either side, joined to the marker by a leader line. Returns {x, y, anchor, leader}
+// per mark (leader is [x1, y1, x2, y2] or null), or null when nothing is free: a label is dropped, never overlapped.
+function placeLabels(marks, w, h, { box = { top: -9, height: 12 }, fixed = [], gap = 3, pad = 1.5, steps = 4 } = {}) {
+  const cores = marks.map((m) => [m.x - m.r, m.y - m.r, m.x + m.r, m.y + m.r]);
+  const taken = [...fixed], leaders = [];
+  const overlaps = (a, b) => a[0] < b[2] + pad && b[0] < a[2] + pad && a[1] < b[3] + pad && b[1] < a[3] + pad;
+  const mid = box.top + box.height / 2;
+  return marks.map((m, i) => {
+    if (!m.width) return null;
+    for (let k = 0; k <= steps; k++) {
+      for (const side of [1, -1]) {
+        for (const dy of k ? [-k, k] : [0]) {
+          const cy = m.y + dy * (box.height + pad);
+          const x = m.x + side * (m.r + gap * (dy ? 3 : 1));  // stepped labels stand off so the leader reads
+          const x0 = side > 0 ? x : x - m.width;
+          const rect = [x0, cy - box.height / 2, x0 + m.width, cy + box.height / 2];
+          if (rect[0] < 0 || rect[1] < 0 || rect[2] > w || rect[3] > h) continue;
+          if (taken.some((b) => overlaps(rect, b)) || cores.some((b) => overlaps(rect, b))) continue;
+          if (leaders.some((s) => segmentHitsBox(s, rect))) continue;
+          let leader = null;
+          if (dy) {
+            const ex = x - side * pad, d = Math.hypot(ex - m.x, cy - m.y);
+            leader = [m.x + ((ex - m.x) / d) * (m.r + 1), m.y + ((cy - m.y) / d) * (m.r + 1), ex, cy];
+            if (taken.some((b) => segmentHitsBox(leader, b)) || cores.some((b, j) => j !== i && segmentHitsBox(leader, b))) continue;
+            leaders.push(leader);
+          }
+          taken.push(rect);
+          return { x, y: cy - mid, anchor: side > 0 ? "start" : "end", leader };
+        }
+      }
+    }
+    return null;
+  });
+}
+
+globalThis.WPMap = Object.freeze({ LAND, WATER, project, inside, landDots, baseMap, arcPath, placeLabels });
