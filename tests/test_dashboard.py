@@ -128,6 +128,21 @@ class StreamTests(ServerTestCase):
         self.assertEqual(alerts["brute_force_ip"]["change"], "created")
         self.assertEqual(alerts["brute_force_ip"]["group_key"], "203.0.113.77")
 
+    def test_status_changes_publish_alert_and_incident_frames(self):
+        admin = self.client("admin")
+        self.assertEqual(admin.post("/api/demo/load", {})[0], 200)
+        incident = admin.get("/api/incidents")[1][0]
+        alert = admin.get("/api/alerts?status=open")[1][0]
+        s = self.open(admin)
+        s.frame(), s.frame()
+        self.assertEqual(admin.post(f"/api/incidents/{incident['id']}/status", {"status": "investigating"})[0], 200)
+        data = s.until("incident")
+        self.assertEqual((data["id"], data["status"], data["change"]), (incident["id"], "investigating", "status"))
+        self.assertEqual(admin.post(f"/api/alerts/{alert['id']}/status",
+                                    {"status": "resolved", "disposition": "benign"})[0], 200)
+        data = s.until("alert")
+        self.assertEqual((data["id"], data["status"], data["change"]), (alert["id"], "resolved", "status"))
+
     def test_heartbeat_and_disconnect_cleanup(self):
         stream.HEARTBEAT_SECONDS = 0.2
         s = self.open(self.client("analyst"))

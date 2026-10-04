@@ -327,6 +327,17 @@ def _publish_events(conn, batch_id, count, synthetic):
         record_error(conn, "stream", exc, guidance="Live dashboard updates may lag; reload the dashboard.")
 
 
+def publish_status_change(kind, record):
+    """Tell dashboards an analyst changed an alert's or incident's status, so boards and counts refresh.
+
+    Detection runs publish on their own; without this, a status change made in one tab stayed invisible on
+    every dashboard (including the analyst's own) until the next detection run.
+    """
+    if stream.BROKER.active():
+        stream.BROKER.publish(kind, {**{k: record.get(k) for k in ("id", "severity", "title", "status", "updated_at")},
+                                     "change": "status"})
+
+
 def _publish_detection(conn, started, summary):
     """Publish alerts (and incidents, once that table exists) touched by this run, plus detection health."""
     if not stream.BROKER.active():

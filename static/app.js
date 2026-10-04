@@ -304,7 +304,7 @@ async function incidentDetail(id) {
         el("div", { class: "card" },
           el("div", { class: "row" }, sev(i.severity), status(i.status), synth(i.synthetic), i.escalated ? pill("escalated: 3+ tactics", "sev-critical") : null),
           el("h1", { style: { marginTop: "8px" } }, `Incident #${i.id}: ${i.title}`),
-          el("div", { class: "row" }, i.stages.map((t, n) => el("span", {}, n ? "→ " : "", pill(t, "stage")))),
+          el("div", { class: "row", style: { marginBottom: "14px" } }, i.stages.map((t, n) => el("span", {}, n ? "→ " : "", pill(t, "stage")))),
           actions),
         el("div", { class: "card" }, el("h2", {}, `Alert timeline (${i.alerts.length})`),
           table(["First seen", "Severity", "Alert", "Tactics", "Techniques", "Status"],
@@ -506,14 +506,19 @@ async function rules() {
         el("button", { class: "ghost", onclick: () => guarded(() => historyDialog(r)) }, "History")));
   });
 
+  // Target and change share a cell, and proposer, reviewer and the review buttons share another, so the
+  // whole table, buttons included, fits a 1280 px screen without scrolling sideways.
   const changeRows = changes.slice(0, 30).map((c) => ({ cells: [
-    `#${c.id}`, status(c.status), el("code", {}, `${c.kind === "rule_update" ? "rule" : "setting"}:${c.target}`),
-    el("pre", {}, JSON.stringify(c.payload)), c.reason,
+    `#${c.id}`, status(c.status),
+    el("div", { class: "change-target" }, el("code", {}, `${c.kind === "rule_update" ? "rule" : "setting"}:${c.target}`),
+      el("pre", {}, JSON.stringify(c.payload, null, 1))),
+    el("div", { class: "change-reason" }, c.reason),
     c.evaluation ? `FP ${c.evaluation.before.fp}→${c.evaluation.after.fp}, TP ${c.evaluation.before.tp}→${c.evaluation.after.tp}, missed ${c.evaluation.after.missed.join(", ") || "none"}` : "—",
-    c.proposed_by, c.reviewed_by ? `${c.reviewed_by}${c.review_note ? `: ${c.review_note}` : ""}` : "—",
-    c.status === "pending" && can("admin") ? el("span", { class: "row" },
-      el("button", { disabled: c.proposed_by === state.user.username, title: c.proposed_by === state.user.username ? "A different admin must review your own proposal" : "", onclick: () => review(c.id, "approve") }, "Approve"),
-      el("button", { class: "ghost", disabled: c.proposed_by === state.user.username, onclick: () => review(c.id, "reject") }, "Reject")) : "",
+    el("div", {}, `by ${c.proposed_by}`,
+      el("div", { class: "muted" }, c.reviewed_by ? `reviewed by ${c.reviewed_by}${c.review_note ? `: ${c.review_note}` : ""}` : "not reviewed yet"),
+      c.status === "pending" && can("admin") ? el("div", { class: "row change-actions" },
+        el("button", { disabled: c.proposed_by === state.user.username, title: c.proposed_by === state.user.username ? "A different admin must review your own proposal" : "", onclick: () => review(c.id, "approve") }, "Approve"),
+        el("button", { class: "ghost", disabled: c.proposed_by === state.user.username, onclick: () => review(c.id, "reject") }, "Reject")) : null),
   ] }));
 
   render(
@@ -527,7 +532,7 @@ async function rules() {
         can("analyst") ? el("button", { class: "ghost", onclick: () => guarded(async () => { await api("/api/evaluations", { method: "POST" }); toast("Evaluation recorded"); rules(); }) }, "Run evaluation") : null,
         el("span", { class: "muted" }, evals[0] ? `Last evaluation ${fmtTime(evals[0].created_at)} (${evals[0].trigger})` : "No evaluations yet"))),
     el("div", { class: "card" }, el("h2", {}, `Change requests (${pending.length} pending)`),
-      table(["ID", "Status", "Target", "Change", "Reason", "Scenario impact (before→after)", "Proposed by", "Reviewed", ""], changeRows)),
+      table(["ID", "Status", "Target and change", "Reason", "Scenario impact", "Review"], changeRows)),
     ...ruleCards,
     el("div", { class: "card" }, el("h2", {}, "Security settings"),
       table(["Setting", "Value", "Allowed", "Last changed", ""], settings.map((s) => ({ cells: [

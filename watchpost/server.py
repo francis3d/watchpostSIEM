@@ -293,8 +293,10 @@ def alert_note(req, alert_id):
 @route("POST", r"/api/alerts/(\d+)/status", role="analyst")
 def alert_status(req, alert_id):
     data = body_json(req)
-    return queries.update_status(req.conn, int(alert_id), req.user["username"], data.get("status"),
-                                 data.get("disposition"), data.get("note"))
+    alert = queries.update_status(req.conn, int(alert_id), req.user["username"], data.get("status"),
+                                  data.get("disposition"), data.get("note"))
+    engine.publish_status_change("alert", alert)
+    return alert
 
 
 # Incidents (correlated alerts) and ATT&CK coverage -------------------------------------
@@ -312,8 +314,10 @@ def incident_detail(req, incident_id):
 @route("POST", r"/api/incidents/(\d+)/status", role="analyst")
 def incident_status(req, incident_id):
     data = body_json(req)
-    return incidents.update_status(req.conn, int(incident_id), req.user["username"], data.get("status"),
-                                   data.get("note"))
+    incident = incidents.update_status(req.conn, int(incident_id), req.user["username"], data.get("status"),
+                                       data.get("note"))
+    engine.publish_status_change("incident", incident)
+    return incident
 
 
 @route("GET", "/api/attack/coverage")

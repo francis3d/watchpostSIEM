@@ -360,6 +360,7 @@ const Dash = {
     if (Live.summary) this.update(Live.summary);
     Live.refreshSummary();
     this.renderBoard();
+    Live.refreshIncidents();  // the cached list can predate a status change made on another page
     this.loadCoverage();
     this.loadHealthDetails();
   },
@@ -651,7 +652,7 @@ function incidentBoard(inc, alerts, perColumn) {
   if (inc.state === "ok") {
     for (const i of inc.list) cols[boardColumn(i.status)].push({
       href: `#incidents/${i.id}`, sev: i.severity, title: i.title, time: i.last_seen, synthetic: i.synthetic,
-      meta: `${i.alert_count || 0} alerts`, tags: i.tactics.slice(0, 4),
+      meta: `${i.alert_count || 0} alerts`, tags: i.tactics.length > 4 ? [...i.tactics.slice(0, 3), `+${i.tactics.length - 3} more`] : i.tactics,
     });
   } else {
     for (const a of alerts || []) cols[boardColumn(a.status)].push({

@@ -201,8 +201,8 @@ Session cookie required (EventSource sends it). One thread per connection; at mo
 | `hello` | on connect | `{version, user, heartbeat_seconds}` |
 | `health` | on connect (full), after each detection run (partial) | `{partial: false, status, checked_at, checks: {name: status}}` or `{partial: true, checks: {detection: ok\|failing}, error}` |
 | `event` | after a batch is stored | `{batch_id, count, synthetic, events: [...]}`: the newest 50 events of the batch (no `raw`) |
-| `alert` | after detection, per alert created or extended | alert row fields plus `change: created\|updated` |
-| `incident` | after detection, per incident touched (once the `incidents` table exists) | the incident row |
+| `alert` | after detection, per alert created or extended; after an analyst changes an alert's status | after detection: alert row fields plus `change: created\|updated`; after a status change: `{id, severity, title, status, updated_at, change: "status"}` |
+| `incident` | after detection, per incident touched (once the `incidents` table exists); after an analyst changes an incident's status | after detection: the incident row; after a status change: `{id, severity, title, status, updated_at, change: "status"}` |
 | `heartbeat` | every 15 s without other traffic | `{ts, subscribers}` |
 | `resync` | the client fell behind (its 500-message queue overflowed) | `{reason}`: refetch `/api/dashboard` |
 

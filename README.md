@@ -8,9 +8,15 @@ It uses only the Python standard library (3.10+). No packages to install, no pai
 
 ![Watchpost SOC dashboard](docs/screenshots/soc-dashboard.png)
 
-<!-- Screenshot placeholders for 2.0; capture at 1280x800 and save under docs/screenshots/:
-     incident-detail.png (kill-chain stages, techniques by tactic), incident-report-pdf.png (first page of the PDF),
-     storyline-running.png (dashboard mid-storyline with the stage tile). -->
+### Screenshots
+
+Every screen, captured from a real run of the demo data and the attack storyline: **[UI tour](docs/UI_TOUR.md)**.
+
+| Storyline running | Incident detail |
+|---|---|
+| [![Dashboard mid-storyline, with the stage tile](docs/screenshots/storyline-running.png)](docs/UI_TOUR.md#2-soc-dashboard-with-the-storyline-running) | [![Incident detail: kill chain, techniques by tactic](docs/screenshots/incident-detail.png)](docs/UI_TOUR.md#5-incident-detail) |
+| **Incident report (PDF, page 1)** | **Rules and two-person review** |
+| [![First page of the incident report PDF](docs/screenshots/incident-report-pdf.png)](docs/UI_TOUR.md#6-incident-report-pdf) | [![A rule proposal from analyst feedback, awaiting a second admin](docs/screenshots/rules-review.png)](docs/UI_TOUR.md#12-rules-and-two-person-review) |
 
 ## What's new in 2.0
 
@@ -234,9 +240,11 @@ labs/siem/
 ├── samples/            synthetic log files for upload
 ├── scripts/smoke.py    end-to-end smoke check against a real server process
 ├── scripts/shipper.py  log file shipper for Linux boxes (stdlib only)
+├── scripts/screenshots.js  regenerates docs/screenshots/ (optional; needs Node + Playwright)
 ├── tests/              unittest suite
 ├── docs/API.md         API reference
 ├── docs/LIVE_INGEST.md syslog listener, rsyslog forwarding, and the file shipper
+├── docs/UI_TOUR.md     every screen with what it shows; images in docs/screenshots/
 ├── deploy/             Debian 12 kit: systemd unit, install.sh, Caddyfile, nginx self-signed config
 ├── DEMO_SCRIPT.md      30-second shot list and 2-minute walkthrough
 ├── LINKEDIN.md         project entry, post, and honest limits

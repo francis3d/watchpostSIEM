@@ -263,3 +263,42 @@ validate` passes on Caddy 2.6.2, the Debian 12 version, and `caddy fmt` reports 
   draft in the repo.
 - Rate-limit defaults suit a small public demo. Visitors behind one corporate NAT share a bucket. Raise
   `SIEM_RATE_PER_MIN` if that becomes a problem.
+
+## UI tour and screenshots (2026-10-04, branch `claude/ecstatic-tesla-2w9ccj`)
+
+**Shipped**
+- `docs/UI_TOUR.md`: all 16 screens with what each shows, plus `docs/screenshots/ui-overview.png`, a 12-screen
+  contact sheet. Fills the README placeholders (`storyline-running.png`, `incident-detail.png`,
+  `incident-report-pdf.png`) and adds login, dashboard lower half, incident board, alerts, alert detail, events, event
+  detail, metrics, ingest, rules and review, health, admin, viewer, and phone-width shots. The README links a 2×2
+  gallery to the tour. The 1.0-era `soc-dashboard*.png` hero images are unchanged.
+- `scripts/screenshots.js`: reproduces every shot from a fresh server (demo data, storyline at 1×, then analyst
+  actions: incident to investigating, two notes, two scanner alerts marked false positive, one brute-force alert
+  marked true positive, a suggestion run, an evaluation). Needs Node and Playwright, installed outside the repo; not a
+  project dependency. Images are reduced to 256 colors (about a third of the size); commands are in the tour.
+
+**Bugs found from the screenshots, fixed**
+- Storyline tile cut to `escala…` at 1280 px: the health tile had grown a fifth check (`storyline`), and the story
+  tile was the one allowed to shrink. The health checks now wrap to two lines and the story tile keeps its width.
+- Dashboard incident board and the strip's incident count stayed stale after an analyst changed an incident's status:
+  the cached list only refreshed after a detection run. The dashboard now reloads incidents when it mounts, and the
+  server publishes `alert` / `incident` SSE frames (`change: "status"`) on status changes, so other open dashboards
+  refresh too. New test `test_status_changes_publish_alert_and_incident_frames` (fails without the server change).
+- Rules → change requests: nine columns at 1280 px squeezed the change JSON to one character per line and pushed
+  Approve/Reject off the card. Target and change now share a cell, and proposer, reviewer, and the buttons share
+  another.
+- Incident cards silently dropped tactics after the fourth; they now show three and `+N more`.
+- Incident detail: the action buttons touched the kill-chain chips; added spacing.
+- Phone width: incident detail overflowed sideways (`1fr` grid tracks grow to the widest table). Tracks are now
+  `minmax(0, 1fr)`, tables scroll inside their card, and panel headers wrap. Measured `scrollWidth` 390 at 390 px.
+
+**Verification.** `./run_tests.sh` as root in the cloud container: 200 tests OK, then SMOKE OK (19 steps).
+`scripts/screenshots.js` ran end to end against a fresh server with no page or console errors; every image was
+checked by eye.
+
+**Not done / notes for the owner**
+- On the attack map the synthetic positions for Northhaven and Ironvale are close, so their labels overlap.
+- The Metrics 24-hour chart ends at the newest event. When the demo data (dated on the last weekday) and a storyline
+  run (dated now) are days apart, the chart shows only the storyline spike, as in `metrics.png`. Working as designed.
+- `success_after_failures` raises one alert per `user|ip`, so the storyline yields two for dave: the attacker's
+  login and dave's own login from HQ after the failures. Also by design; worth a look if it reads as noise.
