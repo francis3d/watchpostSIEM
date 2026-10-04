@@ -297,8 +297,44 @@ validate` passes on Caddy 2.6.2, the Debian 12 version, and `caddy fmt` reports 
 checked by eye.
 
 **Not done / notes for the owner**
-- On the attack map the synthetic positions for Northhaven and Ironvale are close, so their labels overlap.
+- ~~On the attack map the synthetic positions for Northhaven and Ironvale are close, so their labels overlap.~~
+  Superseded by the Dominican Republic map below, which places labels without overlaps.
 - The Metrics 24-hour chart ends at the newest event. When the demo data (dated on the last weekday) and a storyline
   run (dated now) are days apart, the chart shows only the storyline spike, as in `metrics.png`. Working as designed.
 - `success_after_failures` raises one alert per `user|ip`, so the storyline yields two for dave: the attacker's
   login and dave's own login from HQ after the failures. Also by design; worth a look if it reads as noise.
+
+## Attack map focused on the Dominican Republic (2026-10-04, branch `claude/ecstatic-tesla-2w9ccj`)
+
+The owner's requirement: the map view is not worldwide, it is focused on the Dominican Republic.
+
+**Shipped**
+- `static/map.js` rewritten: hand-drawn coastlines of Hispaniola (the Dominican Republic highlighted, Haiti dimmed),
+  Saona, Beata, Gonâve, Tortuga, Mona, Puerto Rico, eastern Cuba, Great Inagua, and the Caicos; Lago Enriquillo and
+  Étang Saumâtre cut out; a 1° graticule with labels; a few reference towns. A local equirectangular projection
+  (`fitView`) fits the country undistorted in any box, and keeps it clear of the "Top sources" overlay.
+- `watchpost/geo.py`: the RFC 1918 sites moved to Dominican cities: Santo Domingo HQ (`10.0.0.0/8`), Santiago
+  branch (`172.16.0.0/12`), Punta Cana remote site (`192.168.0.0/16`). The attacker ranges keep their fictional
+  cities abroad and their coordinates.
+- Attackers are all abroad, so `placeSources` puts each one at the map edge along its great-circle bearing from HQ,
+  with a dashed lead to the edge and a label (city, distance from HQ). Entries slide along the edge until marker and
+  label clear the overlay, the legend, the site markers and labels, and each other. Northhaven (32°) and Ironvale
+  (33°) no longer overlap. Live pulses fire at the entry point and streak to the targeted site.
+- The panel is titled "Attack map · Dominican Republic"; the legend says "HQ & sites"; the header counts sources
+  abroad. Phone width: the map is 300 px tall and drops town and sea labels.
+- Docs: README (dashboard section and the B row), `docs/API.md` (`/api/geo`), `docs/UI_TOUR.md`, `DEMO_SCRIPT.md`,
+  `LINKEDIN.md`. Every screenshot was regenerated, including the README hero `soc-dashboard.png`, which still showed
+  the world map. `soc-dashboard-lower.png` is no longer referenced.
+- Tests: `test_map_is_focused_on_the_dominican_republic` (the three internal sites lie inside map.js's focus box)
+  and an updated export check. `test_impossible_travel` now expects "Santo Domingo HQ".
+
+**Effect on detection.** `impossible_geo_login` needs 500 km or more between logins, and the three Dominican sites are
+134–264 km apart, so travel between them never alerts (before, Chicago–Seattle could). Every attacker city is 5,300 km
+or more from Santo Domingo, so the demo scenarios and the storyline raise the same alerts as before.
+
+**Verification.** `./run_tests.sh`: 201 tests OK, SMOKE OK (19 steps). Map checked in Chromium at 1280×800, 1920×1080,
+and 390 px wide with no page errors.
+
+**Decision for the owner.** Attacker locations stayed abroad, entering at the map edge. If you would rather show some
+attackers inside the Dominican Republic (for example a compromised local ISP), map one documentation range to a
+Dominican town in `watchpost/geo.py`; it will then appear at its position on the map instead of at the edge.

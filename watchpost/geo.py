@@ -1,14 +1,15 @@
 """Synthetic geolocation for demo IP ranges. Not a real geo lookup.
 
-Only the RFC 5737 documentation ranges and RFC 1918 private ranges are mapped, each to a
-fictional city at a fixed position. Anything else returns None ("unknown"): real addresses
-are never guessed.
+Only the RFC 5737 documentation ranges and RFC 1918 private ranges are mapped, each to a fixed
+position. The documentation ranges (the attackers) get fictional cities abroad; the private ranges
+are the demo company's own sites in the Dominican Republic, where the dashboard map is focused.
+Anything else returns None ("unknown"): real addresses are never guessed.
 """
 
 import ipaddress
 import math
 
-# (network, fictional city, lat, lon)
+# (network, place, lat, lon). Attacker places have fictional names; the three internal sites are real Dominican cities.
 _TABLE = [
     ("192.0.2.0/25", "Northhaven", 59.33, 18.07),
     ("192.0.2.128/25", "Saltmere", -33.87, 151.21),
@@ -16,9 +17,9 @@ _TABLE = [
     ("198.51.100.128/25", "Duskport", -23.55, -46.63),
     ("203.0.113.0/25", "Ironvale", 55.75, 37.62),
     ("203.0.113.128/25", "Emberfield", 6.52, 3.38),
-    ("10.0.0.0/8", "Riverton HQ", 41.88, -87.63),
-    ("172.16.0.0/12", "Lakeside branch", 47.61, -122.33),
-    ("192.168.0.0/16", "Hillcrest remote site", 40.71, -74.01),
+    ("10.0.0.0/8", "Santo Domingo HQ", 18.4861, -69.9312),
+    ("172.16.0.0/12", "Santiago branch", 19.4517, -70.6970),
+    ("192.168.0.0/16", "Punta Cana remote site", 18.5601, -68.3725),
 ]
 TABLE = [(ipaddress.ip_network(net), city, lat, lon) for net, city, lat, lon in _TABLE]
 LABEL = "synthetic geo"

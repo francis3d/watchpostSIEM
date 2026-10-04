@@ -23,7 +23,7 @@ Every screen, captured from a real run of the demo data and the attack storyline
 | Workstream | What it adds |
 |---|---|
 | **A · Correlation and MITRE ATT&CK** | Parsers for nginx/Apache access logs, firewall/VPN, CloudTrail-style cloud audit, and host sudo/process events. Six new rules (eleven in total), each mapped to techniques from a static 17-technique ATT&CK subset. Alerts that share an IP, account, or host are correlated into **incidents** with kill-chain stages, and severity is escalated at 3+ tactics. Adds `GET /api/attack/coverage`. |
-| **B · SOC dashboard** | A dark command-center view with a status strip, an attacker map (inline SVG, **synthetic geo** only), a live event stream over **Server-Sent Events** (`/api/stream`, with a polling fallback), alerts over time, top attacker IPs, an ATT&CK heat matrix, an incident board, and health. No JS libraries. |
+| **B · SOC dashboard** | A dark command-center view with a status strip, an attack map focused on the **Dominican Republic** (inline SVG, **synthetic geo** only), a live event stream over **Server-Sent Events** (`/api/stream`, with a polling fallback), alerts over time, top attacker IPs, an ATT&CK heat matrix, an incident board, and health. No JS libraries. |
 | **D · Incident reports** | One-click **Markdown and PDF** reports for incidents and alerts, with a timeline, entities, techniques by tactic, evidence, notes, and recommended actions per technique. The PDF writer is hand-written PDF 1.4. |
 | **E · Live ingestion** | A UDP/TCP **syslog listener** (RFC 3164/5424) and `scripts/shipper.py`, a file tailer that posts to the ingest API with a token. See [docs/LIVE_INGEST.md](docs/LIVE_INGEST.md). |
 | **F · Demo kit** | A read-only **viewer** role that the server enforces on every route, with a public demo account from `SIEM_VIEWER_PASSWORD`. **Per-IP rate limiting** (strict on login). A **`deploy/`** kit for Debian 12: a hardened systemd unit, an idempotent installer, and Caddy or nginx HTTPS. A LinkedIn kit and demo script. |
@@ -203,9 +203,11 @@ This is **not machine learning**. It is transparent, deterministic tuning suppor
 
 ## SOC dashboard
 
-The landing view is a dark SOC console built for a 1280×800 screen: a status strip (events per minute, open and critical alerts, incidents, stored events, health checks, stream state, UTC clock), an attacker world map, a live event stream, alerts over time, top attacker IPs, the MITRE ATT&CK coverage heat matrix, an incident board, top rules, and health. Live updates arrive over Server-Sent Events (`GET /api/stream`); if the stream fails, the page polls every 3 seconds. Charts and the map are inline SVG drawn by `static/charts.js` and `static/map.js`, with no libraries and no external tiles.
+The landing view is a dark SOC console built for a 1280×800 screen: a status strip (events per minute, open and critical alerts, incidents, stored events, health checks, stream state, UTC clock), an attack map of the Dominican Republic, a live event stream, alerts over time, top attacker IPs, the MITRE ATT&CK coverage heat matrix, an incident board, top rules, and health. Live updates arrive over Server-Sent Events (`GET /api/stream`); if the stream fails, the page polls every 3 seconds. Charts and the map are inline SVG drawn by `static/charts.js` and `static/map.js`, with no libraries and no external tiles.
 
-**The map positions are synthetic.** `watchpost/geo.py` maps only the RFC 5737 documentation ranges to fictional city names at fixed coordinates, and the RFC 1918 ranges to internal sites. It is not a geo lookup. Any other address is listed as "unknown" and never guessed. The map is labeled "synthetic geo".
+**The map is focused on the Dominican Republic.** It shows Hispaniola with the Dominican Republic highlighted (Haiti, Puerto Rico, and eastern Cuba for context). The demo company's three sites are Dominican cities: Santo Domingo HQ (`10.0.0.0/8`), the Santiago branch (`172.16.0.0/12`), and the Punta Cana remote site (`192.168.0.0/16`). Attacker locations are all abroad, so each one enters at the edge of the map along its true great-circle bearing from HQ, labeled with its city and distance, and a dashed arc runs to the site it targets.
+
+**The map positions are synthetic.** `watchpost/geo.py` maps only the RFC 5737 documentation ranges, to fictional city names at fixed coordinates, and the RFC 1918 ranges, to those three sites. It is not a geo lookup. Any other address is listed as "unknown" and never guessed. The map is labeled "synthetic geo".
 
 ## Attack storyline
 

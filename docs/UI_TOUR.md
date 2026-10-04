@@ -42,8 +42,10 @@ never prints them to the log.
 
 About a minute into the storyline. The status strip shows events per minute with a sparkline, open and critical
 alerts, open incidents, stored events, the five health checks, and the **Storyline** tile with the current stage
-and progress (`foothold 54%`). The attack map draws arcs from synthetic attacker locations to HQ; the **SYNTHETIC
-GEO** chip says the positions are invented. The live event stream arrives over Server-Sent Events (`LIVE · SSE`)
+and progress (`foothold 54%`). The attack map is focused on the **Dominican Republic**: the demo company's sites
+are Santo Domingo (HQ), Santiago, and Punta Cana. Every attacker location is abroad, so each one enters at the edge
+of the map along its true bearing from HQ, labeled with its city and distance, and a dashed arc runs to HQ. The
+**SYNTHETIC GEO** chip says the positions are invented. The live event stream arrives over Server-Sent Events (`LIVE · SSE`)
 and highlights alerts inline, and its panel border flashes red when a critical alert lands.
 
 ## 3. Dashboard: ATT&CK coverage, incident board, health
@@ -151,8 +153,9 @@ reads "(read-only)". The server enforces this on every route; the UI only mirror
 
 ![Dashboard and incident detail at phone width](screenshots/mobile.png)
 
-At 390 px the navigation wraps, the status strip stacks, and panels go full width. Wide tables scroll inside their
-card instead of widening the page.
+At 390 px the navigation wraps, the status strip stacks, and panels go full width. The map keeps the whole
+Dominican Republic in view and drops the town and sea labels. Wide tables scroll inside their card instead of
+widening the page.
 
 ## Regenerating the screenshots
 
@@ -180,4 +183,5 @@ pdftoppm -png -r 110 -f 1 -l 1 incident-report.pdf report                       
 convert mobile-dashboard.png \( -size 48x1688 xc:'#05080c' \) mobile-incident.png +append +repage mobile.png
 ```
 
-`ui-overview.png` is an ImageMagick `montage` of twelve desktop shots (`-tile 3x4 -geometry 800x500+18+18`).
+`soc-dashboard.png`, the README hero, is `dashboard.png` from the same run. `ui-overview.png` is an ImageMagick
+`montage` of twelve desktop shots (`-tile 3x4 -geometry 800x500+18+18`).

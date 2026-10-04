@@ -301,7 +301,20 @@ class StaticAssetTests(unittest.TestCase):
 
     def test_map_exports(self):
         names = self.exported("map.js", "globalThis.WPMap")
-        self.assertLessEqual({"project", "baseMap", "arcPath", "LAND"}, names)
+        self.assertLessEqual({"project", "baseMap", "arcPath", "LAND", "fitView", "placeSources"}, names)
+
+    def test_map_is_focused_on_the_dominican_republic(self):
+        text = self.read("map.js")
+        focus = re.search(r"const FOCUS = \{ name: \"Dominican Republic\", west: ([-\d.]+), east: ([-\d.]+), "
+                          r"south: ([-\d.]+), north: ([-\d.]+)", text)
+        self.assertIsNotNone(focus, "map.js FOCUS is not the Dominican Republic")
+        west, east, south, north = map(float, focus.groups())
+        # Every internal site in the synthetic geo table is inside the focus, so the map always shows it.
+        sites = [(lat, lon) for net, _city, lat, lon in geo.TABLE if geo.is_internal(str(net.network_address))]
+        self.assertEqual(len(sites), 3)
+        for lat, lon in sites:
+            self.assertTrue(west <= lon <= east and south <= lat <= north, (lat, lon))
+        self.assertEqual(geo.locate("10.0.0.10")["city"], "Santo Domingo HQ")
 
     def test_index_has_no_inline_code_and_scripts_exist(self):
         html = self.read("index.html")

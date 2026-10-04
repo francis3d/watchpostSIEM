@@ -27,9 +27,9 @@ detection pipeline works from the raw log line to the incident report.
   Each one maps to MITRE ATT&CK techniques.
 - **Correlate:** related alerts are chained into incidents by shared IP, account, or host, with a kill-chain stage
   list. Severity escalates when an incident spans three or more ATT&CK tactics.
-- **Respond:** a dark SOC dashboard with a live Server-Sent Events stream, an attacker map, ATT&CK coverage, and an
-  incident board. Analysts triage, annotate, and resolve alerts, then download a one-click incident report in
-  Markdown or a hand-written PDF.
+- **Respond:** a dark SOC dashboard with a live Server-Sent Events stream, an attack map of the Dominican Republic,
+  ATT&CK coverage, and an incident board. Analysts triage, annotate, and resolve alerts, then download a one-click
+  incident report in Markdown or a hand-written PDF.
 - **Secure by default:** PBKDF2 hashing, lockout, per-IP rate limiting, admin/analyst/read-only viewer roles, CSRF
   tokens, a strict CSP, hashed ingest-only API tokens, secret redaction, and two-person review for rule changes. It
   runs as a hardened systemd service behind HTTPS.

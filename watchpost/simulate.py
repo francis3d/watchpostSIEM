@@ -136,7 +136,7 @@ def port_sweep(day, rng):
 def impossible_travel(day, rng):
     return [
         _event(_at(day, 9, 0), "impossible_travel", "auth_success", "erin", "10.0.1.24", host="mail01",
-               message="[SYNTHETIC] Accepted password for erin (office, Riverton HQ)"),
+               message="[SYNTHETIC] Accepted password for erin (office, Santo Domingo HQ)"),
         _event(_at(day, 9, 25), "impossible_travel", "vpn_login", "erin", "203.0.113.150", host="vpn01",
                message="[SYNTHETIC] VPN session for erin from Emberfield 25 minutes later"),
     ]

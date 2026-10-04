@@ -16,7 +16,9 @@ const TACTICS = [
   ["Lateral Movement", "Lateral"], ["Collection", "Collect"], ["Command and Control", "C2"],
   ["Exfiltration", "Exfil"], ["Impact", "Impact"],
 ];
-const HQ_DEFAULT = { city: "Watchpost HQ (internal)", lat: 39.1, lon: -94.6, internal: true, synthetic: true };
+// The demo company's sites, one address per RFC 1918 range in the synthetic geo table (all in the Dominican Republic).
+const SITE_IPS = ["10.0.0.10", "172.16.0.10", "192.168.0.10"];
+const HQ_DEFAULT = { city: "Santo Domingo HQ", lat: 18.4861, lon: -69.9312, internal: true, synthetic: true };
 const FEED_MAX = 140;
 
 // ---------- small helpers ----------
@@ -321,11 +323,11 @@ const Dash = {
     this.feedCount = 0;
     const pause = el("button", { class: "mini ghost", id: "feed-pause", onclick: () => this.togglePause() }, "Pause");
     render(el("div", { class: "soc", id: "soc" },
-      panel("p-map", "Attack map", [chip("SYNTHETIC GEO", "synthetic"), el("span", { class: "muted", id: "map-count" })],
+      panel("p-map", "Attack map · Dominican Republic", [chip("SYNTHETIC GEO", "synthetic"), el("span", { class: "muted", id: "map-count" })],
         el("div", { class: "mapwrap", id: "map" }),
         el("div", { class: "map-side", id: "map-side" }),
         el("div", { class: "map-legend" }, ...["critical", "high", "medium", "low"].map((s) => el("span", {}, el("i", { class: `dot sev-${s}` }), s)),
-          el("span", {}, el("i", { class: "dot hq" }), "HQ target"))),
+          el("span", {}, el("i", { class: "dot hq" }), "HQ & sites"))),
       panel("p-feed", "Live event stream", [el("span", { class: "muted", id: "feed-rate" }), pause],
         el("div", { class: "feed-head" }, el("span", {}, "TIME"), el("span", {}, "SEV"), el("span", {}, "TYPE"), el("span", {}, "SOURCE → TARGET")),
         el("div", { class: "feed", id: "feed", onmouseenter: () => this.hover(true), onmouseleave: () => this.hover(false) })),
@@ -367,7 +369,7 @@ const Dash = {
   async update(d) {
     this.data = d;
     if (!this.feedCount) this.fillFeed(d.recent_events);
-    const ips = [...d.attackers.map((a) => a.ip), ...d.recent_events.map((e) => e.src_ip), ...d.recent_events.map((e) => e.dest_ip), "10.0.0.10"].filter(Boolean);
+    const ips = [...d.attackers.map((a) => a.ip), ...d.recent_events.map((e) => e.src_ip), ...d.recent_events.map((e) => e.dest_ip), ...SITE_IPS].filter(Boolean);
     this.redraw();
     if (await Geo.resolve(ips)) this.renderMarks();
     this.renderAttackers();
@@ -386,14 +388,14 @@ const Dash = {
   renderMap() {
     const box = $("#map");
     if (!box) return;
-    const w = Math.max(320, box.clientWidth), h = Math.max(160, box.clientHeight);
-    const size = `${w}x${h}`;
+    const w = Math.max(280, box.clientWidth), h = Math.max(160, box.clientHeight);
+    const side = $("#map-side");
+    const reserve = side && side.offsetWidth ? side.offsetLeft + side.offsetWidth + 8 : 0;
+    const size = `${w}x${h}x${reserve}`;
     if (this.mapSize !== size) {
-      // Fit the 360x140-degree projection inside the box, centered.
-      const mw = Math.min(w, h * (360 / 140)), mh = mw * (140 / 360);
-      mountSvg(box, WPMap.baseMap(mw, mh));
+      this.view = WPMap.fitView(w, h, { reserveLeft: reserve });
+      mountSvg(box, WPMap.baseMap(this.view));
       this.mapSize = size;
-      this.mapDims = [mw, mh];
     }
     this.renderMarks();
   },
@@ -409,10 +411,15 @@ const Dash = {
     for (const [ip, s] of this.live) add(ip, s.events, s.sev, 0, s.last);
     return [...out.values()];
   },
+  // Internal sites by city (HQ first), from the geo table entries resolved for SITE_IPS.
+  sites() {
+    const out = new Map([[this.hq().city, this.hq()]]);
+    for (const ip of SITE_IPS) { const loc = Geo.get(ip); if (loc && loc.internal && !out.has(loc.city)) out.set(loc.city, loc); }
+    return [...out.values()];
+  },
   renderMarks() {
-    const svg = $("#map svg");
-    if (!svg || !this.mapDims) return;
-    const [w, h] = this.mapDims;
+    const svg = $("#map svg"), v = this.view;
+    if (!svg || !v) return;
     const hq = this.hq();
     const cities = new Map();
     const unknown = [], internal = [];
@@ -425,25 +432,9 @@ const Dash = {
       c.ips.push(s.ip); c.events += s.events; c.sev = maxSev(c.sev, s.sev);
       cities.set(loc.city, c);
     }
-    const ranked = [...cities.values()].sort((a, b) => SEV_RANK[b.sev] - SEV_RANK[a.sev] || b.events - a.events);
-    const esc = WPCharts.esc;
-    let arcs = "", marks = "";
-    ranked.forEach((c, i) => {
-      arcs += `<path class="arc s-${c.sev}" pathLength="100" d="${WPMap.arcPath([c.lon, c.lat], [hq.lon, hq.lat], w, h)}"/>`;
-      const [x, y] = WPMap.project(c.lon, c.lat, w, h);
-      const r = 2.6 + Math.min(5, Math.log2(1 + c.events) * 0.8);
-      marks += `<g class="mk sev-${c.sev}"><title>${esc(`${c.city} (synthetic geo)\n${c.ips.join(", ")}\n${c.events} events`)}</title>` +
-        `<circle class="halo" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r * 2.2).toFixed(1)}"/>` +
-        `<circle class="core" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"/>` +
-        (i < 7 ? `<text class="ml" x="${(x + r + 3).toFixed(1)}" y="${(y + 3).toFixed(1)}">${esc(c.city)}</text>` : "") + `</g>`;
-    });
-    const [hx, hy] = WPMap.project(hq.lon, hq.lat, w, h);
-    marks += `<g class="hq"><title>${esc(`${hq.city} (synthetic geo)`)}</title><circle class="ring" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="9"/>` +
-      `<circle class="core" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.6"/><text class="ml" x="${(hx + 8).toFixed(1)}" y="${(hy + 12).toFixed(1)}">HQ</text></g>`;
-    setSvgChildren(svg.querySelector("g.arcs"), arcs);
-    setSvgChildren(svg.querySelector("g.marks"), marks);
-    $("#map-count").textContent = `${ranked.length} source locations · ${unknown.length} unknown`;
-
+    const ranked = [...cities.values()].sort((a, b) => SEV_RANK[b.sev] - SEV_RANK[a.sev] || b.events - a.events)
+      .map((c) => ({ ...c, r: 2.6 + Math.min(4, Math.log2(1 + c.events) * 0.7) }));
+    // The sources overlay is filled first: entry markers are placed around its final size.
     const side = $("#map-side");
     const row = (s, where, cls) => el("div", { class: "ms-row" }, el("i", { class: `dot sev-${s.sev}` }), el("code", {}, s.ip), el("span", { class: cls || "" }, where));
     const top = this.sources().filter((s) => Geo.get(s.ip) && !Geo.get(s.ip).internal)
@@ -455,20 +446,73 @@ const Dash = {
       ...(unknown.length ? unknown.slice(0, 4).map((s) => row(s, "unknown", "muted")) : [el("div", { class: "muted" }, "none")]),
       unknown.length > 4 ? el("div", { class: "muted" }, `+${unknown.length - 4} more`) : null,
       internal.length ? el("div", { class: "ms-h" }, `Internal sources · ${internal.length}`) : null].filter(Boolean));
+    const esc = WPCharts.esc;
+    // Sites first: their markers and labels, the sources overlay, and the legend are what entries must avoid.
+    const avoid = [];
+    let marks = "";
+    for (const site of this.sites()) {
+      const [x, y] = WPMap.project(site.lon, site.lat, v);
+      const isHq = site.city === hq.city;
+      const name = isHq ? `HQ · ${site.city.replace(/ HQ$/, "")}` : site.city.replace(/ (branch|remote site)$/, "");
+      const tw = name.length * 6 + 4;
+      const [tx, ty, anchor] = isHq ? [x, y + 21, "middle"] : x > v.w - 110 ? [x - 9, y + 3, "end"] : [x + 9, y + 3, "start"];
+      const x0 = anchor === "middle" ? tx - tw / 2 : anchor === "end" ? tx - tw : tx;
+      avoid.push({ x0: x - 12, y0: y - 12, x1: x + 12, y1: y + 12 }, { x0, y0: ty - 10, x1: x0 + tw, y1: ty + 3 });
+      const cx = x.toFixed(1), cy = y.toFixed(1);
+      marks += `<g class="${isHq ? "hq" : "site"}"><title>${esc(`${site.city} (synthetic geo)`)}</title>` +
+        (isHq ? `<circle class="ring" cx="${cx}" cy="${cy}" r="9"/><circle class="core" cx="${cx}" cy="${cy}" r="3.6"/>`
+          : `<rect class="core" x="${(x - 3).toFixed(1)}" y="${(y - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${cx} ${cy})"/>`) +
+        `<text class="ml" text-anchor="${anchor}" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}">${esc(name)}</text></g>`;
+    }
+    const mapBox = $("#map").getBoundingClientRect();
+    for (const sel of ["#map-side", "#p-map .map-legend"]) {
+      const n = $(sel);
+      if (!n || !n.offsetWidth) continue;
+      const b = n.getBoundingClientRect();
+      avoid.push({ x0: b.left - mapBox.left - 6, y0: b.top - mapBox.top - 6, x1: b.right - mapBox.left + 6, y1: b.bottom - mapBox.top + 6 });
+    }
+    const placed = WPMap.placeSources(ranked, hq, v, { avoid });
+    this.entries = new Map(placed.map((c) => [c.city, c]));
+    const fmtKm = (km) => `${Math.round(km).toLocaleString("en-US")} km`;
+    const [hx, hy] = WPMap.project(hq.lon, hq.lat, v);
+    let arcs = "", sourceMarks = "";
+    placed.forEach((c) => {
+      arcs += `<path class="arc s-${c.sev}" pathLength="100" d="${WPMap.arcPath([c.x, c.y], [hx, hy])}"/>`;
+      const x = c.x.toFixed(1), y = c.y.toFixed(1);
+      let lead = "", label;
+      if (c.side) {
+        // A short dashed lead to the frame edge says "from beyond the map".
+        const [ex, ey] = { top: [c.x, 0], bottom: [c.x, v.h], left: [0, c.y], right: [v.w, c.y] }[c.side];
+        lead = `<line class="lead" x1="${x}" y1="${y}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}"/>`;
+        const l = c.label;
+        label = `<text class="ml" text-anchor="${l.anchor}" x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}">${esc(c.city)}` +
+          `<tspan class="km" x="${l.x.toFixed(1)}" dy="10">${esc(fmtKm(c.km))}</tspan></text>`;
+      } else {
+        label = `<text class="ml" x="${(c.x + c.r + 3).toFixed(1)}" y="${(c.y + 3).toFixed(1)}">${esc(c.city)}</text>`;
+      }
+      sourceMarks += `<g class="mk sev-${c.sev}${c.side ? " entry" : ""}"><title>${esc(`${c.city} (synthetic geo), ${fmtKm(c.km)} from ${hq.city}\n${c.ips.join(", ")}\n${c.events} events`)}</title>` +
+        lead + `<circle class="halo" cx="${x}" cy="${y}" r="${(c.r * 2.2).toFixed(1)}"/>` +
+        `<circle class="core" cx="${x}" cy="${y}" r="${c.r.toFixed(1)}"/>` + label + `</g>`;
+    });
+    marks = sourceMarks + marks;
+    setSvgChildren(svg.querySelector("g.arcs"), arcs);
+    setSvgChildren(svg.querySelector("g.marks"), marks);
+    const abroad = placed.filter((c) => c.side).length;
+    $("#map-count").textContent = `${ranked.length} source locations${abroad ? ` · ${abroad} abroad` : ""} · ${unknown.length} unknown`;
   },
   pulse(e) {
-    const svg = $("#map svg");
-    if (!svg || !this.mapDims || !e.src_ip) return;
+    const svg = $("#map svg"), v = this.view;
+    if (!svg || !v || !e.src_ip) return;
     const loc = Geo.get(e.src_ip);
     if (!loc || loc.internal) return;
-    const [w, h] = this.mapDims;
     const fx = svg.querySelector("g.fx");
     if (!fx || fx.childNodes.length > 40) return;
     const target = (e.dest_ip && Geo.get(e.dest_ip) && Geo.get(e.dest_ip).internal) ? Geo.get(e.dest_ip) : this.hq();
-    const [x, y] = WPMap.project(loc.lon, loc.lat, w, h);
+    const at = (this.entries && this.entries.get(loc.city)) || WPMap.placeSources([loc], this.hq(), v)[0];
+    const [tx, ty] = WPMap.project(target.lon, target.lat, v);
     const s = sevOf(e.severity);
-    const wrap = svgNode(`<svg xmlns="http://www.w3.org/2000/svg"><circle class="ping sev-${s}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>` +
-      `<path class="shot s-${s}" pathLength="100" d="${WPMap.arcPath([loc.lon, loc.lat], [target.lon, target.lat], w, h)}"/></svg>`);
+    const wrap = svgNode(`<svg xmlns="http://www.w3.org/2000/svg"><circle class="ping sev-${s}" cx="${at.x.toFixed(1)}" cy="${at.y.toFixed(1)}" r="3"/>` +
+      `<path class="shot s-${s}" pathLength="100" d="${WPMap.arcPath([at.x, at.y], [tx, ty])}"/></svg>`);
     const nodes = [...wrap.childNodes];
     fx.append(...nodes);
     setTimeout(() => nodes.forEach((n) => n.remove()), 1700);

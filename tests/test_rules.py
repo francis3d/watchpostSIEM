@@ -127,7 +127,7 @@ class GeoLoginRuleTests(unittest.TestCase):
         found = rules.impossible_geo_login(events, p)
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0]["group_key"], "erin|10.0.1.24|203.0.113.150")
-        self.assertIn("Riverton HQ", found[0]["explanation"])
+        self.assertIn("Santo Domingo HQ", found[0]["explanation"])
         self.assertIn("synthetic geo", found[0]["explanation"])
 
     def test_plausible_or_unknown_travel_is_quiet(self):

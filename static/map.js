@@ -1,105 +1,89 @@
 "use strict";
-// Watchpost attacker map: hand-drawn, simplified continent outlines ([lon, lat] rings),
-// equirectangular projection, rendered as a dot matrix. No tiles, no network, no library.
-// Positions for attackers come from the server's synthetic geo table (/api/geo), never
-// from a real geo lookup; addresses outside that table are listed as "unknown".
+// Watchpost attack map, focused on the Dominican Republic: hand-drawn, simplified coastlines of
+// Hispaniola and its neighbours ([lon, lat] rings), a local equirectangular projection fitted to the
+// box, rendered as a dot matrix. No tiles, no network, no library.
+// Positions come from the server's synthetic geo table (/api/geo), never from a real geo lookup. The
+// demo company's own sites (RFC 1918 ranges) are in the Dominican Republic. Attacker locations abroad
+// lie far outside the frame, so each one enters at the frame edge along its true (great-circle)
+// bearing from HQ, labeled with its fictional city and distance.
 
-const LAT_TOP = 83, LAT_BOTTOM = -57;
+// The area the view always shows in full, with room around it for entry markers.
+const FOCUS = { name: "Dominican Republic", west: -72.05, east: -68.3, south: 17.45, north: 19.95, padLon: 0.55, padLat: 0.36 };
 
+// Dominican Republic–Haiti border, north to south.
+const BORDER = [[-71.75, 19.71], [-71.71, 19.55], [-71.68, 19.32], [-71.66, 19.21], [-71.71, 19.08], [-71.70, 18.88],
+  [-71.78, 18.72], [-71.92, 18.60], [-71.88, 18.49], [-71.80, 18.30], [-71.76, 18.04]];
+
+// Dominican coast, clockwise from the northern end of the border to its southern end.
+const DR_COAST = [[-71.75, 19.71], [-71.66, 19.84], [-71.66, 19.90], [-71.45, 19.89], [-71.20, 19.86], [-70.95, 19.89],
+  [-70.69, 19.80], [-70.52, 19.77], [-70.40, 19.75], [-70.28, 19.64], [-70.08, 19.65], [-69.90, 19.64], [-69.85, 19.40],
+  [-69.68, 19.30], [-69.53, 19.33], [-69.33, 19.33], [-69.17, 19.36], [-69.11, 19.29], [-69.20, 19.25], [-69.34, 19.20],
+  [-69.61, 19.22], [-69.76, 19.17], [-69.62, 19.08], [-69.38, 19.06], [-69.04, 18.99], [-68.78, 18.95], [-68.55, 18.84],
+  [-68.45, 18.70], [-68.32, 18.61], [-68.36, 18.51], [-68.45, 18.40], [-68.60, 18.37], [-68.70, 18.22], [-68.82, 18.19],
+  [-68.85, 18.30], [-68.86, 18.36], [-68.97, 18.41], [-69.30, 18.45], [-69.45, 18.42], [-69.61, 18.44], [-69.88, 18.46],
+  [-70.03, 18.41], [-70.10, 18.30], [-70.17, 18.22], [-70.33, 18.22], [-70.52, 18.20], [-70.56, 18.28], [-70.70, 18.36],
+  [-70.88, 18.28], [-71.02, 18.30], [-71.10, 18.22], [-71.15, 18.05], [-71.25, 17.88], [-71.38, 17.65], [-71.43, 17.60],
+  [-71.58, 17.77], [-71.66, 17.90], [-71.74, 18.03], [-71.76, 18.04]];
+
+// Haitian coast, clockwise from the southern end of the border to its northern end.
+const HT_COAST = [[-71.76, 18.04], [-71.95, 18.10], [-72.32, 18.23], [-72.53, 18.22], [-72.90, 18.20], [-73.40, 18.27],
+  [-73.60, 18.20], [-73.75, 18.19], [-73.95, 18.05], [-74.20, 18.17], [-74.40, 18.32], [-74.43, 18.60], [-74.12, 18.65],
+  [-73.80, 18.62], [-73.40, 18.52], [-73.09, 18.45], [-72.80, 18.47], [-72.63, 18.51], [-72.34, 18.55], [-72.45, 18.70],
+  [-72.52, 18.77], [-72.62, 18.92], [-72.70, 19.11], [-72.80, 19.25], [-72.69, 19.45], [-72.95, 19.60], [-73.20, 19.65],
+  [-73.38, 19.80], [-73.25, 19.93], [-72.83, 19.94], [-72.55, 19.85], [-72.20, 19.76], [-71.84, 19.68], [-71.75, 19.71]];
+
+const inner = BORDER.slice(1, -1);
 const LAND = [
-  // North America
-  [[-168, 66], [-162, 70], [-156, 71.5], [-140, 70], [-128, 70], [-115, 68], [-95, 72], [-85, 70], [-80, 64], [-94, 59],
-    [-92, 57], [-82, 55], [-79, 52], [-77, 58], [-72, 62], [-64, 60], [-61, 56], [-56, 52], [-60, 47], [-66, 45], [-70, 42],
-    [-74, 40], [-76, 35], [-81, 31], [-80, 26], [-82, 27], [-84, 30], [-89, 30], [-94, 29.5], [-97, 27], [-97, 22],
-    [-95, 18.5], [-91, 19], [-87, 21.5], [-88, 16], [-84, 15], [-83, 11], [-80, 9], [-78, 8], [-80, 7.5], [-83, 8.5],
-    [-86, 12], [-92, 14.5], [-96, 16], [-105, 20], [-106, 23], [-110, 23], [-114, 28], [-117, 32], [-121, 35], [-124, 40],
-    [-124, 46], [-125, 49], [-130, 54], [-135, 58], [-140, 60], [-146, 61], [-152, 59], [-158, 57], [-164, 55], [-160, 58],
-    [-165, 61], [-166, 64]],
-  // Arctic archipelago
-  [[-120, 74], [-100, 78], [-80, 82], [-65, 82], [-75, 76], [-90, 74], [-110, 72]],
-  // Greenland
-  [[-55, 60], [-44, 60], [-40, 65], [-22, 70], [-20, 76], [-18, 81], [-35, 83], [-60, 82], [-72, 78], [-67, 76], [-58, 75],
-    [-52, 69], [-50, 64]],
-  // South America
-  [[-78, 8], [-72, 12], [-64, 10.5], [-60, 8.5], [-52, 5], [-50, 0], [-44, -2.5], [-35, -5], [-35, -9], [-39, -15],
-    [-40, -22], [-48, -26], [-53, -34], [-58, -38.5], [-62, -39], [-65, -42], [-65, -47], [-69, -51], [-68, -55],
-    [-72, -54], [-75, -50], [-74, -44], [-73, -37], [-71.5, -30], [-70, -18], [-76, -14], [-81, -6], [-80, -2], [-77, 4]],
-  // Eurasia
-  [[-9.5, 37], [-6, 36], [-2, 36.8], [0, 38.5], [3, 41.5], [3.5, 43.3], [7, 43.5], [9, 44.3], [12, 42], [16, 38],
-    [15.5, 40.5], [18.5, 40.2], [13, 45.5], [19, 42], [20, 39.5], [23, 36.5], [24, 38], [23, 40], [26, 40.8], [26, 38.5],
-    [28, 36.7], [32, 36.1], [36, 36.2], [35.5, 33], [34.3, 31.3], [34.5, 29.5], [35, 28], [37, 25], [39, 21], [42.8, 14],
-    [43.5, 12.7], [45, 13], [52, 16], [55, 17.5], [58.5, 20.5], [59.8, 22.5], [56.5, 24.5], [56, 26.3], [54, 24.2],
-    [51.5, 24.5], [50, 26.5], [48, 29.5], [50, 30], [51, 27.8], [54.5, 26.5], [57, 25.7], [61.5, 25.2], [66.5, 25.4],
-    [67.5, 24], [70, 21], [72.8, 19], [73.5, 16], [75, 12], [76.5, 8.5], [77.5, 8], [80, 10], [80.3, 13.5], [82, 16.5],
-    [86.5, 20], [87, 21.5], [89, 22], [91.5, 22.5], [92.5, 20.5], [94, 18], [94.5, 16], [97.5, 16.5], [98.5, 13],
-    [98.3, 10], [98.5, 8], [100.3, 6], [101, 3], [103.5, 1.3], [104.2, 1.5], [103.5, 4], [102.5, 6], [100.5, 7.5],
-    [99.5, 10], [100, 13.5], [102, 12.5], [105, 9], [106.5, 10.5], [109, 11.5], [109, 14], [108, 16.5], [106.5, 18.5],
-    [106.8, 20.5], [108.5, 21.6], [110.5, 20.3], [111, 21.5], [113.5, 22.2], [117, 23.5], [119.5, 26], [121.5, 29.5],
-    [121.8, 31], [120.5, 32.5], [119.2, 35], [121, 36.8], [122.5, 37.4], [119, 37.2], [118, 38.5], [117.8, 39], [119, 39.3],
-    [121.5, 40.9], [122, 39.2], [121.3, 39], [124, 39.8], [125.3, 37.7], [126.6, 34.5], [129.3, 35.2], [129.5, 37.8],
-    [128, 39.5], [130, 42.5], [133, 42.8], [135.5, 43.8], [138, 46.5], [140.5, 49], [140.8, 53], [137, 54], [141, 58],
-    [143.5, 59.3], [149, 59.5], [155, 59.3], [156.7, 57], [156, 51.5], [158.5, 53], [162, 56], [163.5, 59.7], [170, 60],
-    [179.9, 64.5], [179.9, 68.5], [176, 69.8], [170, 70], [160, 69.8], [150, 71], [140, 72.5], [130, 71], [128, 73],
-    [113, 73.5], [110, 76.5], [104, 77.7], [98, 76], [88, 75.5], [80, 73.5], [72, 72.8], [68.5, 71], [66, 69], [60, 69.8],
-    [55, 68.5], [44, 68.3], [41, 66.5], [35, 66.5], [33, 69.2], [28, 71], [20, 70], [15, 68], [12.5, 65.8], [10, 63.5],
-    [5, 62], [5.5, 59], [7, 58], [10, 59], [11.5, 58.5], [12.5, 56.3], [12.8, 55.5], [14.3, 55.6], [16, 56.5], [16.5, 57.8],
-    [17, 60.5], [18.5, 60.2], [21, 62.8], [25, 65.2], [22, 65.8], [21.5, 63.8], [21.4, 60.8], [22.8, 59.9], [28, 60.4],
-    [29.5, 59.9], [23.5, 59.2], [21.5, 57.5], [21, 56], [19.8, 54.5], [14.3, 53.9], [11, 54], [10, 55.3], [8.5, 57.1],
-    [8, 55.5], [8.6, 53.6], [7, 53.4], [4.8, 52.5], [3.3, 51.3], [1.6, 50.9], [-1.5, 49.7], [-2, 48.6], [-4.7, 48.4],
-    [-2.5, 47.3], [-1.2, 44.7], [-1.8, 43.4], [-8, 43.7], [-9.2, 43], [-8.8, 41.5], [-9.5, 39]],
-  // Africa
-  [[-17, 21], [-16.5, 24], [-13, 27.7], [-10, 29.5], [-9.8, 31.5], [-6.8, 34], [-5.9, 35.8], [-2, 35.1], [1, 36.5],
-    [10, 37.2], [11, 35.2], [10, 34], [11, 33.2], [15.3, 32.2], [19.8, 30.8], [20.5, 32.5], [25, 32], [29, 30.9],
-    [32.3, 31.3], [34.2, 31.2], [34.9, 29.5], [32.5, 29.8], [35.5, 23.7], [37.2, 21], [38.5, 18], [43.3, 12.5], [44, 10.5],
-    [51, 11.8], [51.2, 10.5], [48.5, 5], [41.5, -1.5], [39, -5], [40.5, -10.5], [40.5, -15.5], [35.3, -22], [35.5, -24],
-    [32.8, -26], [32.5, -28.7], [30, -31.4], [27, -33.6], [22.5, -34], [20, -34.8], [18.4, -34], [18, -31.5], [15.2, -27],
-    [14.5, -22.5], [11.8, -17], [12.5, -13.5], [13.8, -11], [12.3, -6], [9.6, -2.3], [9.5, 3], [8.5, 4.5], [5.5, 4.2],
-    [1, 6], [-2, 4.8], [-7.5, 4.4], [-11.5, 6.9], [-13.3, 9], [-15, 11], [-16.8, 13.5], [-17.5, 14.7], [-16.5, 19.5]],
-  // Madagascar
-  [[49.3, -12], [50.5, -15.5], [49.5, -17.5], [47.2, -25], [45, -25.5], [43.3, -22], [44.4, -16.5], [47, -15]],
-  // Great Britain, Ireland, Iceland
-  [[-5.7, 50], [1.4, 51.2], [1.7, 52.7], [0, 53.5], [-1.6, 55.6], [-2, 57.6], [-3, 58.6], [-5, 58.6], [-6.2, 56.5],
-    [-5.1, 55], [-3, 54.2], [-4.8, 52.8], [-4.2, 51.6]],
-  [[-6, 52], [-6.2, 54], [-7.5, 55.2], [-10, 54.2], [-10.2, 51.8], [-8, 51.6]],
-  [[-22, 64], [-14, 64.5], [-13.6, 65.5], [-16, 66.5], [-22.5, 66.4], [-24, 65.4]],
-  // Japan
-  [[130, 31], [131.8, 33.5], [135, 33.5], [137, 34.5], [140, 35], [141, 38], [142, 40.5], [141.5, 41.5], [140, 40.5],
-    [139.5, 38], [137, 37], [136, 36], [133, 35.5], [130.8, 34]],
-  [[140, 41.5], [141.5, 42.5], [143.5, 42], [145.5, 43.3], [145, 44.3], [141.8, 45.4], [141.5, 43.4], [140, 42.5]],
-  // Maritime Southeast Asia
-  [[120, 18.5], [122.2, 18.5], [122, 16], [124, 13], [126, 8], [125.5, 6], [122, 7], [120.5, 10.5], [119.8, 15.5]],
-  [[95.3, 5.5], [97.5, 5.2], [100, 2.3], [104, -1.5], [106, -5.8], [104.5, -5.8], [101, -3], [98.7, 0.5]],
-  [[105.5, -6], [108, -6.3], [112, -6.8], [114.5, -7.8], [111, -8.3], [106, -7.5]],
-  [[109, 1.5], [110.5, 1.7], [114, 4.5], [116.5, 6.9], [119, 5], [118, 1], [116.5, -2.5], [116, -4], [113, -3.3],
-    [110.2, -3], [109, -0.5]],
-  [[119.5, -5.5], [120.5, -2], [119, 0.7], [120.5, 1.2], [125, 1.5], [123, -0.8], [121.5, -1], [123.5, -5.5], [121.8, -4.8]],
-  [[131, -1], [134, -1], [138, -1.6], [141, -2.6], [145, -4.3], [148, -8], [150.5, -10.5], [147, -10], [143.5, -9],
-    [141, -9.2], [138, -8.3], [137.5, -5], [133.5, -4], [132, -2.8]],
-  // Australia, Tasmania, New Zealand
-  [[113.5, -22], [114, -26.5], [115, -31], [115, -34.2], [118, -35], [123, -33.8], [126, -32.3], [131, -31.5],
-    [135, -34.8], [138, -35.5], [140, -38], [144, -38.3], [146.3, -39], [150, -37.5], [151, -34], [153, -31],
-    [153.6, -28.3], [153, -25], [150.5, -22.5], [149, -20.5], [146.3, -19], [145.3, -15], [143.5, -14], [142.5, -10.7],
-    [141.5, -13], [141.5, -16.5], [140, -17.7], [136.5, -15.5], [137, -12.3], [136.7, -12], [132.5, -11.2],
-    [130.5, -12.3], [129.5, -15], [127, -14], [125.2, -15], [123, -16.5], [122.2, -18], [119, -20], [116.7, -20.6]],
-  [[144.6, -40.7], [148.3, -40.9], [148, -43], [146.5, -43.6], [145.2, -42.2]],
-  [[172.7, -34.4], [174.5, -36], [176, -37.6], [178.5, -37.7], [177, -39.3], [176, -41.3], [174.7, -41.3], [175, -40],
-    [173.8, -39.2], [174.5, -38]],
-  [[172.7, -40.5], [174.3, -41.7], [173.2, -43], [171.2, -44.5], [170.5, -45.9], [168.4, -46.6], [166.5, -45.8],
-    [168.3, -44], [171, -42]],
-  // Sri Lanka, Cuba, Hispaniola
-  [[79.8, 6], [80, 9.8], [81.9, 7.5], [81.2, 6.1]],
-  [[-85, 21.9], [-82, 23.2], [-77.5, 21.8], [-74.2, 20.2], [-77.7, 19.9], [-80.5, 22]],
-  [[-74.5, 18.5], [-72.8, 19.9], [-69, 19.8], [-68.3, 18.6], [-71, 18]],
+  { name: "Dominican Republic", home: true, ring: [...DR_COAST, ...inner.slice().reverse()] },
+  { name: "Haiti", ring: [...HT_COAST, ...inner] },
+  { name: "Isla Saona", home: true, ring: [[-68.92, 18.15], [-68.75, 18.20], [-68.57, 18.17], [-68.62, 18.10], [-68.85, 18.10]] },
+  { name: "Isla Beata", home: true, ring: [[-71.58, 17.62], [-71.50, 17.62], [-71.52, 17.55], [-71.57, 17.55]] },
+  { name: "Gonâve", ring: [[-73.30, 18.92], [-72.95, 18.95], [-72.75, 18.85], [-72.80, 18.75], [-73.10, 18.73]] },
+  { name: "Tortuga", ring: [[-72.95, 20.03], [-72.65, 20.06], [-72.60, 20.02], [-72.90, 19.98]] },
+  { name: "Mona", ring: [[-67.95, 18.10], [-67.85, 18.12], [-67.82, 18.06], [-67.92, 18.05]] },
+  { name: "Puerto Rico", ring: [[-67.27, 18.37], [-67.15, 18.51], [-66.60, 18.49], [-66.10, 18.47], [-65.62, 18.38],
+    [-65.60, 18.22], [-65.85, 18.00], [-66.60, 17.98], [-67.19, 17.95], [-67.22, 18.20]] },
+  { name: "Cuba", ring: [[-74.13, 20.24], [-74.50, 20.35], [-75.00, 20.68], [-75.70, 20.72], [-76.50, 21.10],
+    [-77.20, 20.75], [-77.70, 19.85], [-76.80, 19.95], [-75.85, 19.97], [-75.10, 19.90], [-74.60, 20.05]] },
+  { name: "Great Inagua", ring: [[-73.70, 21.10], [-73.15, 21.20], [-73.00, 21.05], [-73.20, 20.95], [-73.60, 20.95]] },
+  { name: "Caicos", ring: [[-72.45, 21.75], [-71.65, 21.95], [-71.45, 21.75], [-72.00, 21.55]] },
 ];
 
-// Inland seas cut out of Eurasia.
+// Lakes drawn over the land.
 const WATER = [
-  [[28, 41.5], [28, 44], [30, 46.5], [33, 46], [36, 45.3], [38, 47], [39.8, 44], [41.5, 41.5], [36, 41.5], [31, 41.2]],
-  [[47, 37.5], [49.5, 37.5], [54, 37], [54, 41], [52.5, 42], [54, 44], [51, 47], [47.5, 46.5], [47.5, 43], [49.5, 40.5]],
+  { name: "Lago Enriquillo", ring: [[-71.83, 18.50], [-71.70, 18.56], [-71.52, 18.53], [-71.40, 18.48], [-71.55, 18.44], [-71.75, 18.45]] },
+  { name: "Étang Saumâtre", ring: [[-72.12, 18.58], [-71.98, 18.63], [-71.93, 18.58], [-72.05, 18.53]] },
 ];
 
-function project(lon, lat, w, h) {
-  return [((lon + 180) / 360) * w, ((LAT_TOP - lat) / (LAT_TOP - LAT_BOTTOM)) * h];
+// Reference towns (context only; Watchpost's own sites come from the geo table).
+const PLACES = [["Puerto Plata", -70.69, 19.79], ["Samaná", -69.34, 19.21], ["San Juan", -71.23, 18.81],
+  ["Barahona", -71.10, 18.21], ["Port-au-Prince", -72.34, 18.54]];
+
+const AREAS = [["DOMINICAN REPUBLIC", -70.62, 18.93, "area"], ["HAITI", -72.55, 19.18, "area dim"],
+  ["PUERTO RICO", -66.45, 18.25, "area dim"], ["CUBA", -75.4, 20.35, "area dim"],
+  ["Caribbean Sea", -70.6, 17.66, "area sea"], ["Atlantic Ocean", -69.3, 19.74, "area sea"]];
+
+const D2R = Math.PI / 180;
+const r1 = (v) => Math.round(v * 10) / 10;
+const xml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// Fit FOCUS (plus padding) inside a w x h box, undistorted at the focus latitude. `reserveLeft` keeps the
+// focus clear of an overlay along the left side; the land behind it is still drawn.
+function fitView(w, h, { reserveLeft = 0 } = {}) {
+  const lat0 = (FOCUS.south + FOCUS.north) / 2, lon0 = (FOCUS.west + FOCUS.east) / 2;
+  const cos0 = Math.cos(lat0 * D2R);
+  const spanX = (FOCUS.east - FOCUS.west + 2 * FOCUS.padLon) * cos0, spanY = FOCUS.north - FOCUS.south + 2 * FOCUS.padLat;
+  const room = Math.max(w * 0.5, w - reserveLeft);
+  const k = Math.min(room / spanX, h / spanY);  // px per degree of latitude
+  return { w, h, k, kx: k * cos0, lon0, lat0, cx: w - room / 2, cy: h / 2 };
+}
+
+function project(lon, lat, v) {
+  return [v.cx + (lon - v.lon0) * v.kx, v.cy - (lat - v.lat0) * v.k];
+}
+
+function unproject(x, y, v) {
+  return [v.lon0 + (x - v.cx) / v.kx, v.lat0 - (y - v.cy) / v.k];
 }
 
 function inside(lon, lat, ring) {
@@ -111,53 +95,149 @@ function inside(lon, lat, ring) {
   return hit;
 }
 
-let dotCache = null;
-function landDots(step = 2.4) {
-  if (dotCache && dotCache.step === step) return dotCache.dots;
-  const dots = [];
-  for (let lat = LAT_TOP - step / 2; lat > LAT_BOTTOM; lat -= step) {
-    for (let lon = -180 + step / 2; lon < 180; lon += step) {
-      if (LAND.some((r) => inside(lon, lat, r)) && !WATER.some((r) => inside(lon, lat, r))) dots.push([lon, lat]);
+const bboxes = new Map();
+function bbox(ring) {
+  if (!bboxes.has(ring)) {
+    const lons = ring.map((p) => p[0]), lats = ring.map((p) => p[1]);
+    bboxes.set(ring, [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)]);
+  }
+  return bboxes.get(ring);
+}
+const within = (lon, lat, ring) => { const b = bbox(ring); return lon >= b[0] && lon <= b[2] && lat >= b[1] && lat <= b[3] && inside(lon, lat, ring); };
+
+// Static layer: graticule, coastlines, land dots (the Dominican Republic brighter), lakes, labels.
+function baseMap(v) {
+  const { w, h } = v;
+  let out = `<svg xmlns="http://www.w3.org/2000/svg" class="geomap" width="${r1(w)}" height="${r1(h)}" viewBox="0 0 ${r1(w)} ${r1(h)}" role="img" aria-label="Attack map of the Dominican Republic (synthetic geo)">`;
+  const [west, south] = unproject(0, h, v), [east, north] = unproject(w, 0, v);
+  out += `<g class="graticule">`;
+  for (let lon = Math.ceil(west); lon <= east; lon++) {
+    const [x] = project(lon, 0, v);
+    out += `<line x1="${r1(x)}" x2="${r1(x)}" y1="0" y2="${r1(h)}"/>` + (x > 40 && x < w - 40 ? `<text class="gl" x="${r1(x + 3)}" y="${r1(h - 4)}">${-lon}°W</text>` : "");
+  }
+  for (let lat = Math.ceil(south); lat <= north; lat++) {
+    const [, y] = project(0, lat, v);
+    out += `<line x1="0" x2="${r1(w)}" y1="${r1(y)}" y2="${r1(y)}"/>` + (y > 30 && y < h - 30 ? `<text class="gl" x="4" y="${r1(y - 3)}">${lat}°N</text>` : "");
+  }
+  const path = (ring) => ring.map(([lon, lat], i) => { const [x, y] = project(lon, lat, v); return `${i ? "L" : "M"}${r1(x)} ${r1(y)}`; }).join("") + "Z";
+  out += `</g><g class="coast">`;
+  for (const l of LAND) out += `<path class="${l.home ? "home" : ""}" d="${path(l.ring)}"/>`;
+  out += `</g><g class="land">`;
+  const step = Math.max(4.5, Math.min(8, v.k * 0.055)), rad = r1(step * 0.3);
+  for (let y = step / 2; y < h; y += step) {
+    for (let x = step / 2; x < w; x += step) {
+      const [lon, lat] = unproject(x, y, v);
+      const land = LAND.find((l) => within(lon, lat, l.ring));
+      if (!land || WATER.some((l) => within(lon, lat, l.ring))) continue;
+      out += `<circle${land.home ? ` class="home"` : ""} cx="${r1(x)}" cy="${r1(y)}" r="${rad}"/>`;
     }
   }
-  dotCache = { step, dots };
-  return dots;
-}
-
-const r2 = (v) => Math.round(v * 10) / 10;
-
-// Static layer: graticule, faint coastlines, land dots. Returns an SVG string.
-function baseMap(w, h, { step = 2.4 } = {}) {
-  let out = `<svg xmlns="http://www.w3.org/2000/svg" class="worldmap" width="${r2(w)}" height="${r2(h)}" viewBox="0 0 ${r2(w)} ${r2(h)}" role="img" aria-label="Attacker map (synthetic geo)">`;
-  out += `<g class="graticule">`;
-  for (let lon = -150; lon < 180; lon += 30) {
-    const [x] = project(lon, 0, w, h);
-    out += `<line x1="${r2(x)}" x2="${r2(x)}" y1="0" y2="${r2(h)}"/>`;
+  out += `</g><g class="lakes">${WATER.map((l) => `<path d="${path(l.ring)}"/>`).join("")}</g><g class="areas">`;
+  for (const [text, lon, lat, cls] of AREAS.filter((a) => w >= 480 || !a[3].includes("sea"))) {
+    const [x, y] = project(lon, lat, v);
+    const half = (text.length * (cls.includes("sea") ? 7.2 : 8.7)) / 2;  // letter-spaced, text-anchor middle
+    if (x - half > 4 && x + half < w - 4 && y > 12 && y < h - 4) out += `<text class="${cls}" x="${r1(x)}" y="${r1(y)}">${xml(text)}</text>`;
   }
-  for (let lat = -30; lat <= 60; lat += 30) {
-    const [, y] = project(0, lat, w, h);
-    out += `<line class="${lat === 0 ? "equator" : ""}" x1="0" x2="${r2(w)}" y1="${r2(y)}" y2="${r2(y)}"/>`;
-  }
-  out += `</g><g class="coast">`;
-  for (const ring of LAND) {
-    out += `<path d="${ring.map(([lon, lat], i) => { const [x, y] = project(lon, lat, w, h); return `${i ? "L" : "M"}${r2(x)} ${r2(y)}`; }).join("")}Z"/>`;
-  }
-  out += `</g><g class="land">`;
-  const rad = Math.max(0.9, (w / 360) * step * 0.34);
-  for (const [lon, lat] of landDots(step)) {
-    const [x, y] = project(lon, lat, w, h);
-    out += `<circle cx="${r2(x)}" cy="${r2(y)}" r="${r2(rad)}"/>`;
+  out += `</g><g class="places">`;
+  for (const [name, lon, lat] of w >= 480 ? PLACES : []) {  // too crowded on a phone
+    const [x, y] = project(lon, lat, v);
+    if (x > 0 && x < w && y > 0 && y < h) out += `<circle cx="${r1(x)}" cy="${r1(y)}" r="1.6"/><text x="${r1(x + 4)}" y="${r1(y + 3)}">${xml(name)}</text>`;
   }
   return out + `</g><g class="arcs"></g><g class="marks"></g><g class="fx"></g></svg>`;
 }
 
-// Curved path from a to b ([lon, lat]), bowed toward the pole for a flight-path look.
-function arcPath(a, b, w, h) {
-  const [x1, y1] = project(a[0], a[1], w, h);
-  const [x2, y2] = project(b[0], b[1], w, h);
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2 - Math.min(h * 0.45, dist * 0.35);
-  return `M${r2(x1)} ${r2(y1)}Q${r2(cx)} ${r2(cy)} ${r2(x2)} ${r2(y2)}`;
+// Curved path between two screen points, bowed to one side.
+function arcPath(p, q, bend = 0.16) {
+  const [x1, y1] = p, [x2, y2] = q;
+  const cx = (x1 + x2) / 2 - (y2 - y1) * bend, cy = (y1 + y2) / 2 + (x2 - x1) * bend;
+  return `M${r1(x1)} ${r1(y1)}Q${r1(cx)} ${r1(cy)} ${r1(x2)} ${r1(y2)}`;
 }
 
-globalThis.WPMap = Object.freeze({ LAND, WATER, project, inside, landDots, baseMap, arcPath });
+// Initial great-circle bearing in degrees (0 = north, 90 = east) and distance in km, between {lat, lon}.
+function bearing(a, b) {
+  const p1 = a.lat * D2R, p2 = b.lat * D2R, dl = (b.lon - a.lon) * D2R;
+  const y = Math.sin(dl) * Math.cos(p2), x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (Math.atan2(y, x) / D2R + 360) % 360;
+}
+
+function distanceKm(a, b) {
+  const p1 = a.lat * D2R, p2 = b.lat * D2R;
+  const s = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(((b.lon - a.lon) * D2R) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(Math.min(1, s)));
+}
+
+// Label for an entry marker: two lines (city, distance) beside the marker on the left and right edges,
+// under it on the top edge and over it on the bottom edge. Returns the text anchor point and its box.
+function entryLabel(side, x, y, r, city, km, v) {
+  const tw = Math.max(city.length * 5.9, km.length * 5.3) + 4, th = 22;
+  let anchor = "middle", lx = x, ly;
+  if (side === "left" || side === "right") {
+    anchor = side === "left" ? "start" : "end";
+    lx = side === "left" ? x + r + 6 : x - r - 6;
+    ly = y - 1;
+  } else {
+    ly = side === "top" ? y + r + 12 : y - r - 15;
+    if (x - tw / 2 < 4) { anchor = "start"; lx = x - r; } else if (x + tw / 2 > v.w - 4) { anchor = "end"; lx = x + r; }
+  }
+  const x0 = anchor === "start" ? lx : anchor === "end" ? lx - tw : lx - tw / 2;
+  return { x: lx, y: ly, anchor, box: { x0, y0: ly - 10, x1: x0 + tw, y1: ly - 10 + th } };
+}
+
+const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+// Place sources on the map. A source inside the frame sits at its position; any other enters at the frame
+// edge along its bearing from `hub`. Entries then slide clockwise along the frame until their marker and
+// label clear the `avoid` boxes ({x0, y0, x1, y1}: overlays, site markers and labels) and each other.
+// Sources may carry `r` (marker radius). Returns [{...source, x, y, side, km, label}] where side is null for
+// in-frame sources and "top" | "right" | "bottom" | "left" for entries.
+function placeSources(sources, hub, v, { inset = { top: 16, right: 16, bottom: 46, left: 16 }, avoid = [] } = {}) {
+  const f = { x0: inset.left, y0: inset.top, x1: v.w - inset.right, y1: v.h - inset.bottom };
+  const W = f.x1 - f.x0, H = f.y1 - f.y0, P = 2 * (W + H);
+  const toS = (x, y, side) => side === "top" ? x - f.x0 : side === "right" ? W + y - f.y0
+    : side === "bottom" ? W + H + f.x1 - x : 2 * W + H + f.y1 - y;
+  const fromS = (s) => {
+    s = ((s % P) + P) % P;
+    if (s < W) return [f.x0 + s, f.y0, "top"];
+    if (s < W + H) return [f.x1, f.y0 + s - W, "right"];
+    if (s < 2 * W + H) return [f.x1 - (s - W - H), f.y1, "bottom"];
+    return [f.x0, f.y1 - (s - 2 * W - H), "left"];
+  };
+  const fmtKm = (km) => `${Math.round(km).toLocaleString("en-US")} km`;
+  const [hx, hy] = project(hub.lon, hub.lat, v);
+  const placed = [], entries = [];
+  for (const src of sources) {
+    const km = distanceKm(hub, src);
+    const [x, y] = project(src.lon, src.lat, v);
+    if (x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1) { placed.push({ ...src, x, y, side: null, km, label: null }); continue; }
+    const b = bearing(hub, src) * D2R, dx = Math.sin(b), dy = -Math.cos(b);
+    let t = Infinity;
+    if (dx > 1e-9) t = Math.min(t, (f.x1 - hx) / dx);
+    if (dx < -1e-9) t = Math.min(t, (f.x0 - hx) / dx);
+    if (dy > 1e-9) t = Math.min(t, (f.y1 - hy) / dy);
+    if (dy < -1e-9) t = Math.min(t, (f.y0 - hy) / dy);
+    const ex = hx + dx * t, ey = hy + dy * t;
+    const side = Math.abs(ey - f.y0) < 0.5 ? "top" : Math.abs(ex - f.x1) < 0.5 ? "right" : Math.abs(ey - f.y1) < 0.5 ? "bottom" : "left";
+    entries.push({ src, km, s: toS(ex, ey, side) });
+  }
+  entries.sort((a, b) => a.s - b.s);
+  const taken = [...avoid];
+  for (const e of entries) {
+    const r = e.src.r || 5;
+    let spot;
+    for (let step = 0; step < P; step += 3) {
+      const [x, y, side] = fromS(e.s + step);
+      const label = entryLabel(side, x, y, r, e.src.city, fmtKm(e.km), v);
+      const mark = { x0: x - r - 3, y0: y - r - 3, x1: x + r + 3, y1: y + r + 3 };
+      if (!taken.some((b) => overlaps(b, mark) || overlaps(b, label.box))) { spot = { x, y, side, label, mark }; break; }
+    }
+    if (!spot) {
+      const [x, y, side] = fromS(e.s);
+      spot = { x, y, side, label: entryLabel(side, x, y, r, e.src.city, fmtKm(e.km), v), mark: null };
+    }
+    if (spot.mark) taken.push(spot.mark, spot.label.box);
+    placed.push({ ...e.src, x: spot.x, y: spot.y, side: spot.side, km: e.km, label: spot.label });
+  }
+  return placed;
+}
+
+globalThis.WPMap = Object.freeze({ FOCUS, LAND, WATER, fitView, project, unproject, inside, baseMap, arcPath, bearing, distanceKm, entryLabel, placeSources });
